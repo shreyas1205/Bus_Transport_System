@@ -1,0 +1,333 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  FLEET_MANAGER
+  DRIVER
+  STUDENT
+  STAFF
+  PARENT
+}
+
+enum BoardingMethod {
+  QR
+  RFID
+  ID
+  BIOMETRIC
+}
+
+enum BoardingStatus {
+  BOARDED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum PassStatus {
+  ACTIVE
+  EXPIRED
+  PENDING_RENEWAL
+  CANCELLED
+}
+
+enum IncidentType {
+  SOS
+  CRASH
+  BREAKDOWN
+  FIRE
+  MEDICAL
+  OTHER
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
+model User {
+  id                   String                @id @default(cuid())
+  name                 String
+  email                String                @unique
+  passwordHash         String
+  role                 Role
+  phone                String?
+  institutionId        String?               @unique
+  assignedRouteId      String?
+  pickupStopId         String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  studentProfile       StudentProfile?
+  staffProfile         StaffProfile?
+  driverProfile        DriverProfile?
+  parentProfile        ParentProfile?
+  assignedRoute        Route?                @relation("UserAssignedRoute", fields: [assignedRouteId], references: [id])
+  pickupStop           Stop?                 @relation("UserPickupStop", fields: [pickupStopId], references: [id])
+  driverRoutes         Route[]               @relation("RouteDriver")
+  boardingEvents       BoardingEvent[]
+  payments             Payment[]
+  passes               BusPass[]
+  incidents            Incident[]
+  fees                 Fee[]
+  transportEnrollments TransportEnrollment[] @relation("TransportEnrollments")
+  complaints           Complaint[]
+}
+
+model StudentProfile {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  course        String?
+  semester      String?
+  guardianName  String?
+  guardianPhone String?
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StaffProfile {
+  id         String  @id @default(cuid())
+  userId     String  @unique
+  department String?
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DriverProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  licenseNumber String
+  licenseExpiry DateTime?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ParentProfile {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  studentId String?
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Route {
+  id                   String                @id @default(cuid())
+  arrivalAlertMinutes  Int                   @default(10)
+  code                 String                @unique
+  name                 String
+  description          String?
+  isActive             Boolean               @default(true)
+  assignedBusId        String?
+  assignedDriverId     String?
+  assignedBus          Vehicle?              @relation(fields: [assignedBusId], references: [id])
+  assignedDriver       User?                 @relation("RouteDriver", fields: [assignedDriverId], references: [id])
+  users                User[]                @relation("UserAssignedRoute")
+  stops                RouteStop[]
+  changes              RouteChange[]
+  transportEnrollments TransportEnrollment[] @relation("RouteEnrollments")
+  createdAt            DateTime              @default(now())
+}
+
+model Stop {
+  id                   String                @id @default(cuid())
+  feeAmount            Float                 @default(0)
+  name                 String
+  locationText         String?
+  googleMapsUrl        String?
+  latitude             Float
+  longitude            Float
+  geofenceM            Int                   @default(150)
+  transportFee         Float                 @default(0)
+  pickupUsers          User[]                @relation("UserPickupStop")
+  routes               RouteStop[]
+  transportEnrollments TransportEnrollment[] @relation("StopEnrollments")
+  fees                 Fee[]                 @relation("FeePickupStop")
+}
+
+model RouteStop {
+  id         String  @id @default(cuid())
+  routeId    String
+  stopId     String
+  sequence   Int
+  plannedEta String?
+  route      Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop       Stop    @relation(fields: [stopId], references: [id], onDelete: Cascade)
+
+  @@unique([routeId, stopId])
+  @@unique([routeId, sequence])
+}
+
+model TransportEnrollment {
+  id           String   @id @default(cuid())
+  userId       String
+  routeId      String
+  stopId       String
+  academicYear String
+  selectedAt   DateTime @default(now())
+  user         User     @relation("TransportEnrollments", fields: [userId], references: [id], onDelete: Cascade)
+  route        Route    @relation("RouteEnrollments", fields: [routeId], references: [id], onDelete: Cascade)
+  stop         Stop     @relation("StopEnrollments", fields: [stopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, academicYear])
+  @@index([routeId])
+  @@index([stopId])
+}
+
+model Vehicle {
+  id                  String            @id @default(cuid())
+  busNumber           String?           @unique
+  registrationNo      String            @unique
+  model               String
+  capacity            Int
+  odometerKm          Float             @default(0)
+  lastServiceAt       DateTime?
+  lastServiceKm       Float             @default(0)
+  serviceIntervalKm   Float             @default(5000)
+  serviceIntervalDays Int               @default(180)
+  status              String            @default("ACTIVE")
+  latitude            Float?
+  longitude           Float?
+  speedKmph           Float?
+  updatedAt           DateTime          @updatedAt
+  routes              Route[]
+  locations           VehicleLocation[]
+  services            VehicleService[]
+  incidents           Incident[]
+}
+
+model VehicleLocation {
+  id         String   @id @default(cuid())
+  vehicleId  String
+  latitude   Float
+  longitude  Float
+  speedKmph  Float    @default(0)
+  recordedAt DateTime @default(now())
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, recordedAt])
+}
+
+model BoardingEvent {
+  id         String         @id @default(cuid())
+  userId     String
+  routeId    String?
+  stopId     String?
+  vehicleId  String?
+  method     BoardingMethod
+  identifier String
+  status     BoardingStatus @default(BOARDED)
+  scannedAt  DateTime       @default(now())
+  user       User           @relation(fields: [userId], references: [id])
+}
+
+model Fee {
+  id           String        @id @default(cuid())
+  pickupStopId String?
+  pickupStop   Stop?         @relation("FeePickupStop", fields: [pickupStopId], references: [id])
+  userId       String
+  academicYear String
+  amount       Float
+  dueDate      DateTime
+  status       PaymentStatus @default(PENDING)
+  user         User          @relation(fields: [userId], references: [id])
+  payments     Payment[]
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  userId           String
+  feeId            String
+  amount           Float
+  gateway          String
+  gatewayOrderId   String?
+  gatewayPaymentId String?
+  status           PaymentStatus @default(PENDING)
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+  user             User          @relation(fields: [userId], references: [id])
+  fee              Fee           @relation(fields: [feeId], references: [id])
+}
+
+model BusPass {
+  id                 String     @id @default(cuid())
+  userId             String
+  routeId            String?
+  passNumber         String     @unique
+  validFrom          DateTime
+  validUntil         DateTime
+  status             PassStatus @default(ACTIVE)
+  qrPayload          String
+  renewalRequestedAt DateTime?
+  user               User       @relation(fields: [userId], references: [id])
+}
+
+model VehicleService {
+  id          String   @id @default(cuid())
+  vehicleId   String
+  serviceType String
+  serviceKm   Float
+  serviceDate DateTime @default(now())
+  notes       String?
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+}
+
+model Incident {
+  id             String         @id @default(cuid())
+  vehicleId      String?
+  driverId       String?
+  type           IncidentType
+  status         IncidentStatus @default(OPEN)
+  priority       Int            @default(5)
+  message        String
+  latitude       Float?
+  longitude      Float?
+  createdAt      DateTime       @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  vehicle        Vehicle?       @relation(fields: [vehicleId], references: [id])
+  driver         User?          @relation(fields: [driverId], references: [id])
+}
+
+model RouteChange {
+  id           String   @id @default(cuid())
+  routeId      String
+  reason       String
+  fromBusId    String?
+  toBusId      String?
+  fromDriverId String?
+  toDriverId   String?
+  createdAt    DateTime @default(now())
+  route        Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+}
+
+model Complaint {
+  id            String          @id @default(cuid())
+  userId        String
+  subject       String
+  category      String          @default("OTHER")
+  description   String
+  status        ComplaintStatus @default(OPEN)
+  adminResponse String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  resolvedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}

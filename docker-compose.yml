@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: campus-bus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: campus_bus
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: campus_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - campus_bus_pg:/var/lib/postgresql/data
+
+volumes:
+  campus_bus_pg:

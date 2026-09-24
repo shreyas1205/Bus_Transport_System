@@ -1,0 +1,9 @@
+{
+  "name": "campus-bus-transport-system",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "backend": "npm --prefix backend run dev",
+    "frontend": "npm --prefix frontend run dev"
+  }
+}
