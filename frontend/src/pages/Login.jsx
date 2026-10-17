@@ -1,161 +1,477 @@
-import {useState} from 'react';
-import {useNavigate} from 'react-router-dom';
-import {useAuth} from '../auth';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth';
+
+function BusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="5" y="3" width="14" height="16" rx="3" />
+      <path d="M7 8h10M8 15h.01M16 15h.01M8 19v2M16 19v2" />
+    </svg>
+  );
+}
+
+function StudentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m3.5 9 8.5-4 8.5 4-8.5 4-8.5-4Z" />
+      <path d="M7 11.2v4.2c0 1.5 2.2 2.8 5 2.8s5-1.3 5-2.8v-4.2" />
+    </svg>
+  );
+}
+
+function StaffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="9" cy="8" r="3" />
+      <circle cx="17" cy="10" r="2.5" />
+      <path d="M3.5 19c.5-3.3 2.4-5 5.5-5s5 1.7 5.5 5" />
+      <path d="M14.5 16c.8-.8 1.8-1.2 3-1.2 2 0 3.3 1 3.7 3" />
+    </svg>
+  );
+}
+
+function ParentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="7" r="3" />
+      <path d="M5 20c.5-4 2.8-6 7-6s6.5 2 7 6" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 20 7v5c0 5-3.2 8.3-8 9-4.8-.7-8-4-8-9V7l8-4Z" />
+      <path d="m8.5 12 2.2 2.2 4.8-4.8" />
+    </svg>
+  );
+}
+
+function LocationIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
+function QrIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <rect x="3" y="3" width="6" height="6" rx="1" />
+      <rect x="15" y="3" width="6" height="6" rx="1" />
+      <rect x="3" y="15" width="6" height="6" rx="1" />
+      <path d="M15 15h2v2h-2zM19 15h2M19 19h2v2M15 19v2" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M10 21h4" />
+    </svg>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <circle cx="9" cy="8" r="3" />
+      <circle cx="17" cy="10" r="2.5" />
+      <path d="M3.5 19c.5-3.3 2.4-5 5.5-5s5 1.7 5.5 5" />
+      <path d="M14.5 16c.8-.8 1.8-1.2 3-1.2 2 0 3.3 1 3.7 3" />
+    </svg>
+  );
+}
+
+function LeafIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M20 4C12 4 6 7 5 14c4-2 8-3 12-3" />
+      <path d="M5 20c1-5 4-8 9-10" />
+    </svg>
+  );
+}
 
 const roles = [
   {
-    key:'ADMIN',
-    title:'Admin',
-    subtitle:'Operations & system control',
-    email:'admin@campusbus.local',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.2 8.3-8 9-4.8-.7-8-4-8-9V7l8-4Z"/><path d="m8.5 12 2.2 2.2 4.8-4.8"/></svg>
-    )
+    key: 'STUDENT',
+    title: 'Student',
+    email: 'student1@campusbus.local',
+    icon: <StudentIcon />,
   },
   {
-    key:'DRIVER',
-    title:'Driver',
-    subtitle:'Trips, boarding & live GPS',
-    email:'driver1@campusbus.local',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16V8.8c0-.5.3-.9.7-1.1l1.8-.9h9l1.8.9c.4.2.7.6.7 1.1V16"/><path d="M4 16h16v2.2c0 .4-.3.8-.8.8H4.8c-.5 0-.8-.4-.8-.8V16Z"/><path d="M7.5 12h.01M16.5 12h.01"/><path d="M7 6.8 8 4h8l1 2.8"/></svg>
-    )
+    key: 'DRIVER',
+    title: 'Driver',
+    email: 'driver1@campusbus.local',
+    icon: <BusIcon />,
   },
   {
-    key:'STUDENT',
-    title:'Student',
-    subtitle:'Route, pass, fees & ETA',
-    email:'student1@campusbus.local',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3.5 9 8.5-4 8.5 4-8.5 4-8.5-4Z"/><path d="M7 11.2v4.2c0 1.5 2.2 2.8 5 2.8s5-1.3 5-2.8v-4.2"/><path d="M20.5 10v5"/></svg>
-    )
+    key: 'STAFF',
+    title: 'Staff',
+    email: '',
+    icon: <StaffIcon />,
   },
   {
-    key:'PARENT',
-    title:'Parent',
-    subtitle:'Student travel & safety updates',
-    email:'parent1@campusbus.local',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.8 18.5c.5-3 2.3-4.5 5.2-4.5s4.7 1.5 5.2 4.5"/><path d="M14.6 16.2c.8-.9 1.8-1.4 3.2-1.4 1.8 0 3.1.9 3.4 2.9"/></svg>
-    )
+    key: 'PARENT',
+    title: 'Parent',
+    email: 'parent1@campusbus.local',
+    icon: <ParentIcon />,
+  },
+  {
+    key: 'ADMIN',
+    title: 'Admin',
+    email: 'shreyass1269@gmail.com',
+    icon: <ShieldIcon />,
   },
 ];
 
-function ShieldIcon(){
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7v5c0 5-3.2 8.3-8 9-4.8-.7-8-4-8-9V7l8-4Z"/><path d="m8.5 12 2.2 2.2 4.8-4.8"/></svg>;
-}
+const homeByRole = {
+  ADMIN: '/',
+  DRIVER: '/routes',
+  STUDENT: '/live-location',
+  PARENT: '/live-location',
+  STAFF: '/fees',
+};
 
-export default function Login(){
-  const [role,setRole]=useState('STUDENT');
-  const [email,setEmail]=useState('student1@campusbus.local');
-  const [password,setPassword]=useState('Pass@123');
-  const [showPassword,setShowPassword]=useState(false);
-  const [error,setError]=useState('');
-  const [busy,setBusy]=useState(false);
-  const {login,logout}=useAuth();
-  const navigate=useNavigate();
-  const selected=roles.find(x=>x.key===role) || roles[2];
+const features = [
+  {
+    title: 'Live Tracking',
+    text: 'Know where your bus is in real time',
+    icon: <LocationIcon />,
+    tone: 'blue',
+  },
+  {
+    title: 'Smart Boarding',
+    text: 'Quick & secure QR check-in',
+    icon: <QrIcon />,
+    tone: 'blue',
+  },
+  {
+    title: 'Instant Alerts',
+    text: 'Get boarding, delay & route updates',
+    icon: <BellIcon />,
+    tone: 'orange',
+  },
+  {
+    title: 'Safety & SOS',
+    text: 'Emergency assistance at your fingertips',
+    icon: <ShieldIcon />,
+    tone: 'red',
+  },
+  {
+    title: 'For Everyone',
+    text: 'Students, Parents, Staff and Admins',
+    icon: <UsersIcon />,
+    tone: 'cyan',
+  },
+  {
+    title: 'Greener Campus',
+    text: 'Efficient routes for a cleaner tomorrow',
+    icon: <LeafIcon />,
+    tone: 'green',
+  },
+];
 
-  const chooseRole=(r)=>{
-    setRole(r.key);
-    setEmail(r.email);
-    setPassword('Pass@123');
+export default function Login() {
+  const [role, setRole] = useState('STUDENT');
+  const [email, setEmail] = useState('student1@campusbus.local');
+  const [password, setPassword] = useState('Pass@123');
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const { login, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const selected =
+    roles.find((item) => item.key === role) || roles[0];
+
+  const chooseRole = (item) => {
+    if (busy) return;
+
+    setRole(item.key);
+    setEmail(item.email);
+    setPassword(item.email ? 'Pass@123' : '');
+    setShowPassword(false);
     setError('');
   };
 
-  const submit=async e=>{
-    e.preventDefault();
-    setBusy(true); setError('');
-    try{
-      const user=await login(email,password);
-      if(user.role!==role){
+  const submit = async (event) => {
+    event.preventDefault();
+
+    if (busy) return;
+
+    setBusy(true);
+    setError('');
+
+    try {
+      const user = await login(email.trim(), password);
+
+      if (user.role !== role) {
         logout();
-        throw new Error(`This account does not have ${selected.title} access.`);
+
+        throw new Error(
+          `This account does not have ${selected.title} access.`
+        );
       }
-      navigate('/');
-    }catch(err){
-      setError(err.response?.data?.message || err.message || 'Login failed');
-    }finally{setBusy(false)}
+
+      if (remember) {
+        localStorage.setItem('campusbus_last_role', user.role);
+      } else {
+        localStorage.removeItem('campusbus_last_role');
+      }
+
+      navigate(homeByRole[user.role] || '/profile', {
+        replace: true,
+      });
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          'Login failed. Please try again.'
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
-  return <div className="premium-login-page animated-login-page">
-    <div className="premium-login-orb orb-one" />
-    <div className="premium-login-orb orb-two" />
-    <div className="login-grid-glow" />
-    <div className="login-route-lines" aria-hidden="true">
-      <span className="route-line line-a" />
-      <span className="route-line line-b" />
-      <span className="route-node node-a" />
-      <span className="route-node node-b" />
-      <span className="route-node node-c" />
-      <span className="route-bus">🚌</span>
-    </div>
+  return (
+    <div className="ref-login-page">
 
-    <div className="premium-login-shell">
-      <section className="premium-login-brand-panel animated-brand-panel">
-        <div>
-          <div className="premium-brand-row">
-            <div className="premium-brand-mark">CB</div>
+      <div className="ref-login-overlay" />
+
+      <header className="ref-topbar">
+        <div className="ref-logo">
+          <div className="ref-logo-icon">
+            <BusIcon />
+          </div>
+
+          <div>
+            <strong>
+              Campus<span>Bus</span>
+            </strong>
+            <small>Transport Management System</small>
+          </div>
+        </div>
+
+        <div className="ref-support">
+          <span>Need help?</span>
+          <span className="ref-support-text">Contact Support</span>
+        </div>
+      </header>
+
+      <main className="ref-login-layout">
+
+        {/* LEFT */}
+        <section className="ref-hero" id="home">
+          <div className="ref-hero-copy">
+            <div className="ref-kicker">
+              SAFE&nbsp;&nbsp;•&nbsp;&nbsp;SMART&nbsp;&nbsp;•&nbsp;&nbsp;CONNECTED
+            </div>
+
+            <h1>
+              Safe Rides.
+              <br />
+              <span>Brighter Futures.</span>
+            </h1>
+
+            <p>
+              Real-time tracking, smart boarding, and a safer
+              journey for every student. One connected campus.
+            </p>
+          </div>
+
+          <div className="ref-features" id="features">
+            {features.map((feature) => (
+              <article
+                className={`ref-feature ${feature.tone}`}
+                key={feature.title}
+              >
+                <div className="ref-feature-icon">
+                  {feature.icon}
+                </div>
+
+                <strong>{feature.title}</strong>
+                <p>{feature.text}</p>
+
+                <span className="ref-feature-arrow">→</span>
+              </article>
+            ))}
+          </div>
+
+          <blockquote className="ref-quote">
+            <span />
             <div>
-              <div className="premium-brand-name">CampusBus</div>
-              <div className="premium-brand-tag">Smart campus mobility</div>
+              <p>
+                “More than transport,
+                <br />
+                a safer campus community.”
+              </p>
+
+              <small>— CAMPUSBUS TRANSPORT</small>
+            </div>
+          </blockquote>
+        </section>
+
+        {/* RIGHT */}
+        <section className="ref-auth-wrap">
+          <div className="ref-auth-card">
+
+            <div className="ref-auth-heading">
+              <h2>
+                Welcome <span>Back</span> 👋
+              </h2>
+
+              <p>Sign in to your CampusBus account</p>
+            </div>
+
+            <div className="ref-role-label">
+              Choose your role
+            </div>
+
+            <div className="ref-role-grid">
+              {roles.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={
+                    role === item.key
+                      ? 'ref-role selected'
+                      : 'ref-role'
+                  }
+                  onClick={() => chooseRole(item)}
+                  disabled={busy}
+                >
+                  <span>{item.icon}</span>
+                  <strong>{item.title}</strong>
+                </button>
+              ))}
+            </div>
+
+            <form
+              className="ref-auth-form"
+              onSubmit={submit}
+            >
+              <label>
+                Email Address
+
+                <div className="ref-input">
+                  <span className="ref-input-symbol">@</span>
+
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(event.target.value)
+                    }
+                    placeholder="yourname@campusbus.local"
+                    autoComplete="username"
+                    disabled={busy}
+                    required
+                  />
+                </div>
+              </label>
+
+              <label>
+                Password
+
+                <div className="ref-input">
+                  <span className="ref-input-symbol">▣</span>
+
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    disabled={busy}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="ref-show-password"
+                    onClick={() =>
+                      setShowPassword((value) => !value)
+                    }
+                    disabled={busy}
+                    aria-label={
+                      showPassword
+                        ? 'Hide password'
+                        : 'Show password'
+                    }
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </label>
+
+              <div className="ref-form-row">
+                <label className="ref-remember">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(event) =>
+                      setRemember(event.target.checked)
+                    }
+                    disabled={busy}
+                  />
+
+                  <span>Remember me</span>
+                </label>
+
+                <Link
+                  to="/forgot-password"
+                  onClick={(event) => {
+                    if (busy) event.preventDefault();
+                  }}
+                >
+                  Forgot Password?
+                </Link>
+              </div>
+
+              {error && (
+                <div className="ref-error" role="alert">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="ref-signin"
+                disabled={busy}
+              >
+                {busy ? (
+                  <>
+                    <span className="ref-spinner" />
+                    Signing In...
+                  </>
+                ) : (
+                  <>
+                    Sign In
+                    <span>→</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="ref-security">
+              <ShieldIcon />
+              <span>Your data is secure and protected</span>
             </div>
           </div>
+        </section>
 
-          <div className="premium-brand-copy animated-brand-copy">
-            <span className="premium-eyebrow">CONNECTED TRANSPORT OPERATIONS</span>
-            <h1>Every trip.<br/><em>One trusted platform.</em></h1>
-            <p>Manage routes, buses, boarding, live location, safety, fees and student transport from one secure workspace.</p>
-          </div>
-        </div>
-
-        <div className="premium-feature-stack animated-feature-stack">
-          <div className="premium-feature-row"><span className="feature-dot"/><div><strong>Live visibility</strong><span>Bus location and arrival status</span></div></div>
-          <div className="premium-feature-row"><span className="feature-dot"/><div><strong>Role-based access</strong><span>Only the right tools for each user</span></div></div>
-          <div className="premium-feature-row"><span className="feature-dot"/><div><strong>Built for campus scale</strong><span>Students, drivers, parents and admins</span></div></div>
-        </div>
-      </section>
-
-      <section className="premium-login-card animated-login-card">
-        <div className="premium-login-heading">
-          <div className="premium-security-line"><ShieldIcon/><span>SECURE CAMPUS ACCESS</span></div>
-          <h2>Sign in to CampusBus</h2>
-          <p>Select your account type to continue.</p>
-        </div>
-
-        <div className="premium-role-grid animated-role-grid">
-          {roles.map(r=><button key={r.key} type="button" className={`premium-role-card animated-role-card ${role===r.key?'selected':''}`} onClick={()=>chooseRole(r)} aria-pressed={role===r.key}>
-            <span className="premium-role-icon">{r.icon}</span>
-            <span className="premium-role-copy"><strong>{r.title}</strong><small>{r.subtitle}</small></span>
-            {role===r.key&&<span className="premium-role-check">✓</span>}
-          </button>)}
-        </div>
-
-        <div className="premium-selected-access animated-selected-access">
-          <div className="premium-selected-icon">{selected.icon}</div>
-          <div><span>Signing in as</span><strong>{selected.title}</strong></div>
-          <small>Access verified</small>
-        </div>
-
-        <form className="premium-login-form animated-form" onSubmit={submit}>
-          <label>Email address<input value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="username" placeholder="you@campus.edu" required/></label>
-          <label>Password
-            <span className="premium-password-wrap">
-              <input value={password} onChange={e=>setPassword(e.target.value)} type={showPassword?'text':'password'} autoComplete="current-password" placeholder="Enter your password" required/>
-              <button type="button" className="premium-password-toggle" onClick={()=>setShowPassword(v=>!v)}>{showPassword?'Hide':'Show'}</button>
-            </span>
-          </label>
-          {error&&<div className="premium-login-error" role="alert">{error}</div>}
-          <button className="premium-login-submit" disabled={busy}><span>{busy?'Signing in…':`Continue as ${selected.title}`}</span><span className="premium-arrow">→</span></button>
-        </form>
-
-        <div className="premium-demo-box animated-demo-box">
-          <div className="demo-lock"><ShieldIcon/></div>
-          <div><strong>Demo environment</strong><span>{selected.email} · Pass@123</span></div>
-        </div>
-
-        <div className="premium-footer-note animated-footer-note">CampusBus • Secure transport management</div>
-      </section>
+      </main>
     </div>
-  </div>;
+  );
 }

@@ -35,6 +35,7 @@ function StatusChip({ status }) {
 export default function Complaints() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const isParent = user?.role === 'PARENT';
   const [complaints, setComplaints] = useState([]);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -70,13 +71,20 @@ export default function Complaints() {
     [complaints, filter],
   );
 
+  const complaintStats = useMemo(() => ({
+    total: complaints.length,
+    open: complaints.filter(c => c.status === 'OPEN').length,
+    progress: complaints.filter(c => c.status === 'IN_PROGRESS').length,
+    resolved: complaints.filter(c => c.status === 'RESOLVED').length,
+  }), [complaints]);
+
   async function submitComplaint(e) {
     e.preventDefault();
     try {
       setError('');
       await api.post('/complaints', form);
       setForm({ subject: '', category: 'BUS_DELAY', description: '' });
-      setNotice('Complaint submitted to Admin.');
+      setNotice('Complaint submitted to transport Admin.');
       setTimeout(() => setNotice(''), 3500);
       load();
     } catch (e) {
@@ -105,12 +113,21 @@ export default function Complaints() {
         <div>
           <span className="eyebrow">SERVICE DESK</span>
           <h2>Complaints & Support</h2>
-          <p>{isAdmin ? 'Review student issues, respond and update resolution status.' : 'Describe a transport issue and track its resolution.'}</p>
+          <p>{isAdmin ? 'Review passenger issues, respond and update resolution status.' : 'Describe a transport issue and track its resolution.'}</p>
         </div>
       </div>
 
       {notice && <div className="success">{notice}</div>}
       {error && <div className="error">{error}</div>}
+
+      {isAdmin && (
+        <div className="complaint-summary-grid">
+          <div className="complaint-stat"><span>TOTAL</span><strong>{complaintStats.total}</strong><small>All submitted issues</small></div>
+          <div className="complaint-stat danger"><span>OPEN</span><strong>{complaintStats.open}</strong><small>Needs attention</small></div>
+          <div className="complaint-stat warn"><span>IN PROGRESS</span><strong>{complaintStats.progress}</strong><small>Currently being handled</small></div>
+          <div className="complaint-stat good"><span>RESOLVED</span><strong>{complaintStats.resolved}</strong><small>Completed cases</small></div>
+        </div>
+      )}
 
       {!isAdmin && (
         <section className="panel">
@@ -131,8 +148,8 @@ export default function Complaints() {
         </section>
       )}
 
-      <section className="panel">
-        <div className="panel-head">
+      <section className="panel complaints-panel">
+        <div className="panel-head complaints-panel-head">
           <div>
             <h3>{isAdmin ? 'All complaints' : 'My complaints'}</h3>
             <p>{isAdmin ? `${complaints.length} complaint${complaints.length === 1 ? '' : 's'} recorded.` : 'Your submitted issues and Admin responses.'}</p>
@@ -171,7 +188,7 @@ export default function Complaints() {
 function ComplaintCard({ complaint, isAdmin, saving, onSave }) {
   const [status, setStatus] = useState(complaint.status);
   const [response, setResponse] = useState(complaint.adminResponse || '');
-  const studentName = complaint.user?.name || 'Student';
+  const studentName = complaint.user?.name || 'Passenger';
   const category = categories.find(([value]) => value === complaint.category)?.[1] || complaint.category;
 
   useEffect(() => {

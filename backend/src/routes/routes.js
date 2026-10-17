@@ -40,7 +40,54 @@ async function geocodeLocation(query) {
 }
 
 router.get('/', auth, async (req, res) => {
+  let where = {};
+
+  if (req.user.role === 'DRIVER') {
+    where = { assignedDriverId: req.user.id };
+  } else if (req.user.role === 'STUDENT' || req.user.role === 'STAFF') {
+    const currentUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        assignedRouteId: true,
+        transportEnrollments: {
+          orderBy: { selectedAt: 'desc' },
+          take: 1,
+          select: { routeId: true },
+        },
+      },
+    });
+    const routeId = currentUser?.assignedRouteId || currentUser?.transportEnrollments?.[0]?.routeId;
+    where = routeId ? { id: routeId } : { id: '__NO_ASSIGNED_ROUTE__' };
+  } else if (req.user.role === 'PARENT') {
+    // ParentProfile stores studentId as a scalar; it has no Prisma `student` relation.
+    const parent = await prisma.parentProfile.findUnique({
+      where: { userId: req.user.id },
+      select: { studentId: true },
+    });
+
+    const student = parent?.studentId
+      ? await prisma.user.findUnique({
+          where: { id: parent.studentId },
+          select: {
+            assignedRouteId: true,
+            transportEnrollments: {
+              orderBy: { selectedAt: 'desc' },
+              take: 1,
+              select: { routeId: true },
+            },
+          },
+        })
+      : null;
+
+    const routeId =
+      student?.assignedRouteId ||
+      student?.transportEnrollments?.[0]?.routeId;
+
+    where = routeId ? { id: routeId } : { id: '__NO_ASSIGNED_ROUTE__' };
+  }
+
   const routes = await prisma.route.findMany({
+    where,
     include: {
       stops: { include: { stop: true }, orderBy: { sequence: 'asc' } },
       assignedBus: true,
@@ -135,23 +182,165 @@ router.post('/geocode', auth, allow('ADMIN'), async (req, res) => {
   }
 });
 
-router.post('/geofence-check', auth, allow('ADMIN','FLEET_MANAGER','DRIVER'), async (req,res) => {
+router.post('/geofence-check', auth, allow('ADMIN','DRIVER'), async (req,res) => {
   const { stopId, latitude, longitude } = req.body;
   const stop = await prisma.stop.findUnique({ where: { id: stopId } });
   if (!stop) return res.status(404).json({ message: 'Stop not found' });
   res.json({ inside: withinGeofence(Number(latitude), Number(longitude), stop), stop, checkedAt: new Date().toISOString() });
 });
 
-router.post('/optimize', auth, allow('ADMIN','FLEET_MANAGER'), async (req, res) => {
-  const { routeId } = req.body;
-  const route = await prisma.route.findUnique({ where: { id: routeId }, include: { stops: { include: { stop: true } } } });
-  if (!route) return res.status(404).json({ message: 'Route not found' });
-  const ordered = nearestNeighbor(route.stops.map(s => s.stop));
-  await prisma.$transaction(ordered.map((stop, index) => prisma.routeStop.update({ where: { id: route.stops.find(rs => rs.stopId === stop.id).id }, data: { sequence: index + 1 } })));
-  res.json({ message: 'Route optimized with nearest-neighbour heuristic', ordered: ordered.map(s => s.name) });
-});
+router.post(
+  '/optimize',
+  auth,
+  allow('ADMIN'),
+  async (req, res, next) => {
+    try {
+      const { routeId } = req.body;
 
-router.post('/:id/reassign', auth, allow('ADMIN','FLEET_MANAGER'), async (req, res) => {
+      const route = await prisma.route.findUnique({
+        where: {
+          id: routeId
+        },
+
+        include: {
+          stops: {
+            include: {
+              stop: true
+            }
+          }
+        }
+      });
+
+      if (!route) {
+        return res.status(404).json({
+          message: 'Route not found'
+        });
+      }
+
+      if (route.stops.length < 2) {
+        return res.json({
+          message: 'Route already optimized',
+          ordered: route.stops.map(
+            (item) => item.stop.name
+          )
+        });
+      }
+
+      const ordered = nearestNeighbor(
+        route.stops.map(
+          (item) => item.stop
+        )
+      );
+
+      const routeStopByStopId = new Map(
+        route.stops.map(
+          (item) => [
+            item.stopId,
+            item
+          ]
+        )
+      );
+
+      const maxSequence = route.stops.reduce(
+        (max, item) =>
+          Math.max(
+            max,
+            item.sequence || 0
+          ),
+        0
+      );
+
+      const temporaryStart =
+        maxSequence +
+        route.stops.length +
+        1000;
+
+      await prisma.$transaction(
+        async (tx) => {
+
+          // STEP 1:
+          // Move every stop to a temporary
+          // sequence so there are no
+          // unique-constraint collisions.
+          for (
+            let index = 0;
+            index < ordered.length;
+            index++
+          ) {
+            const stop =
+              ordered[index];
+
+            const routeStop =
+              routeStopByStopId.get(
+                stop.id
+              );
+
+            if (!routeStop) {
+              throw new Error(
+                `Route stop not found for stop ${stop.id}`
+              );
+            }
+
+            await tx.routeStop.update({
+              where: {
+                id: routeStop.id
+              },
+
+              data: {
+                sequence:
+                  temporaryStart +
+                  index
+              }
+            });
+          }
+
+
+          // STEP 2:
+          // Apply final sequence values.
+          for (
+            let index = 0;
+            index < ordered.length;
+            index++
+          ) {
+            const stop =
+              ordered[index];
+
+            const routeStop =
+              routeStopByStopId.get(
+                stop.id
+              );
+
+            await tx.routeStop.update({
+              where: {
+                id: routeStop.id
+              },
+
+              data: {
+                sequence:
+                  index + 1
+              }
+            });
+          }
+        }
+      );
+
+      res.json({
+        message:
+          'Route optimized with nearest-neighbour heuristic',
+
+        ordered:
+          ordered.map(
+            (stop) => stop.name
+          )
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post('/:id/reassign', auth, allow('ADMIN'), async (req, res) => {
   const { busId, driverId, reason = 'Operational reassignment', busNumber } = req.body;
   const route = await prisma.route.findUnique({ where: { id: req.params.id } });
   if (!route) return res.status(404).json({ message: 'Route not found' });
@@ -164,3 +353,4 @@ router.post('/:id/reassign', auth, allow('ADMIN','FLEET_MANAGER'), async (req, r
 });
 
 export default router;
+

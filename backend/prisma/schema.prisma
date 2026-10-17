@@ -9,7 +9,6 @@ datasource db {
 
 enum Role {
   ADMIN
-  FLEET_MANAGER
   DRIVER
   STUDENT
   STAFF
@@ -25,13 +24,21 @@ enum BoardingMethod {
 
 enum BoardingStatus {
   BOARDED
+  DROPPED_OFF
   REJECTED
+}
+
+enum NotificationType {
+  BOARDING
+  DROPOFF
+  GENERAL
 }
 
 enum PaymentStatus {
   PENDING
   PAID
   FAILED
+  REFUNDED
 }
 
 enum PassStatus {
@@ -56,6 +63,21 @@ enum IncidentStatus {
   RESOLVED
 }
 
+enum AccidentVerificationStatus {
+  NOT_APPLICABLE
+  PENDING
+  CONFIRMED
+  FALSE_ALARM
+}
+
+enum EmergencyDispatchStatus {
+  NOT_REQUIRED
+  PENDING
+  MOCK_DISPATCHED
+  DISPATCHED
+  FAILED
+}
+
 enum ComplaintStatus {
   OPEN
   IN_PROGRESS
@@ -63,32 +85,45 @@ enum ComplaintStatus {
   REJECTED
 }
 
+enum LicenseVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 model User {
-  id                   String                @id @default(cuid())
-  name                 String
-  email                String                @unique
-  passwordHash         String
-  role                 Role
-  phone                String?
-  institutionId        String?               @unique
-  assignedRouteId      String?
-  pickupStopId         String?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  studentProfile       StudentProfile?
-  staffProfile         StaffProfile?
-  driverProfile        DriverProfile?
-  parentProfile        ParentProfile?
-  assignedRoute        Route?                @relation("UserAssignedRoute", fields: [assignedRouteId], references: [id])
-  pickupStop           Stop?                 @relation("UserPickupStop", fields: [pickupStopId], references: [id])
-  driverRoutes         Route[]               @relation("RouteDriver")
-  boardingEvents       BoardingEvent[]
-  payments             Payment[]
-  passes               BusPass[]
-  incidents            Incident[]
-  fees                 Fee[]
-  transportEnrollments TransportEnrollment[] @relation("TransportEnrollments")
-  complaints           Complaint[]
+  id                       String    @id @default(cuid())
+  name                     String
+  email                    String    @unique
+  passwordHash             String
+  role                     Role
+  phone                    String?
+  institutionId            String?   @unique
+  assignedRouteId          String?
+  pickupStopId             String?
+  passwordVersion          Int       @default(0)
+  passwordResetRequestedAt DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  studentProfile StudentProfile?
+  staffProfile   StaffProfile?
+  driverProfile  DriverProfile?
+  parentProfile  ParentProfile?
+
+  assignedRoute Route?  @relation("UserAssignedRoute", fields: [assignedRouteId], references: [id])
+  pickupStop    Stop?   @relation("UserPickupStop", fields: [pickupStopId], references: [id])
+  driverRoutes  Route[] @relation("RouteDriver")
+
+  boardingEvents          BoardingEvent[]
+  payments                Payment[]
+  passes                  BusPass[]
+  incidents               Incident[]
+  fees                    Fee[]
+  transportEnrollments    TransportEnrollment[]    @relation("TransportEnrollments")
+  complaints              Complaint[]
+  notifications           Notification[]
+  passwordResetChallenges PasswordResetChallenge[]
 }
 
 model StudentProfile {
@@ -98,59 +133,69 @@ model StudentProfile {
   semester      String?
   guardianName  String?
   guardianPhone String?
-  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model StaffProfile {
   id         String  @id @default(cuid())
   userId     String  @unique
   department String?
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model DriverProfile {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  licenseNumber String
-  licenseExpiry DateTime?
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String                    @id @default(cuid())
+  userId            String                    @unique
+  licenseNumber     String
+  licenseExpiry     DateTime?
+  licensePhoto      String?                   @db.Text
+  licenseStatus     LicenseVerificationStatus @default(PENDING)
+  licenseReviewNote String?
+  licenseReviewedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ParentProfile {
   id        String  @id @default(cuid())
   userId    String  @unique
   studentId String?
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Route {
-  id                   String                @id @default(cuid())
-  arrivalAlertMinutes  Int                   @default(10)
-  code                 String                @unique
-  name                 String
-  description          String?
-  isActive             Boolean               @default(true)
-  assignedBusId        String?
-  assignedDriverId     String?
+  id                  String   @id @default(cuid())
+  arrivalAlertMinutes Int      @default(10)
+  code                String   @unique
+  name                String
+  description         String?
+  isActive            Boolean  @default(true)
+  assignedBusId       String?
+  assignedDriverId    String?
+  createdAt           DateTime @default(now())
+
   assignedBus          Vehicle?              @relation(fields: [assignedBusId], references: [id])
   assignedDriver       User?                 @relation("RouteDriver", fields: [assignedDriverId], references: [id])
   users                User[]                @relation("UserAssignedRoute")
   stops                RouteStop[]
   changes              RouteChange[]
   transportEnrollments TransportEnrollment[] @relation("RouteEnrollments")
-  createdAt            DateTime              @default(now())
 }
 
 model Stop {
-  id                   String                @id @default(cuid())
-  feeAmount            Float                 @default(0)
-  name                 String
-  locationText         String?
-  googleMapsUrl        String?
-  latitude             Float
-  longitude            Float
-  geofenceM            Int                   @default(150)
-  transportFee         Float                 @default(0)
+  id            String  @id @default(cuid())
+  feeAmount     Float   @default(0)
+  name          String
+  locationText  String?
+  googleMapsUrl String?
+  latitude      Float
+  longitude     Float
+  geofenceM     Int     @default(150)
+  transportFee  Float   @default(0)
+
   pickupUsers          User[]                @relation("UserPickupStop")
   routes               RouteStop[]
   transportEnrollments TransportEnrollment[] @relation("StopEnrollments")
@@ -163,8 +208,9 @@ model RouteStop {
   stopId     String
   sequence   Int
   plannedEta String?
-  route      Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  stop       Stop    @relation(fields: [stopId], references: [id], onDelete: Cascade)
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop  Stop  @relation(fields: [stopId], references: [id], onDelete: Cascade)
 
   @@unique([routeId, stopId])
   @@unique([routeId, sequence])
@@ -177,9 +223,10 @@ model TransportEnrollment {
   stopId       String
   academicYear String
   selectedAt   DateTime @default(now())
-  user         User     @relation("TransportEnrollments", fields: [userId], references: [id], onDelete: Cascade)
-  route        Route    @relation("RouteEnrollments", fields: [routeId], references: [id], onDelete: Cascade)
-  stop         Stop     @relation("StopEnrollments", fields: [stopId], references: [id], onDelete: Cascade)
+
+  user  User  @relation("TransportEnrollments", fields: [userId], references: [id], onDelete: Cascade)
+  route Route @relation("RouteEnrollments", fields: [routeId], references: [id], onDelete: Cascade)
+  stop  Stop  @relation("StopEnrollments", fields: [stopId], references: [id], onDelete: Cascade)
 
   @@unique([userId, academicYear])
   @@index([routeId])
@@ -187,25 +234,26 @@ model TransportEnrollment {
 }
 
 model Vehicle {
-  id                  String            @id @default(cuid())
-  busNumber           String?           @unique
-  registrationNo      String            @unique
+  id                  String    @id @default(cuid())
+  busNumber           String?   @unique
+  registrationNo      String    @unique
   model               String
   capacity            Int
-  odometerKm          Float             @default(0)
+  odometerKm          Float     @default(0)
   lastServiceAt       DateTime?
-  lastServiceKm       Float             @default(0)
-  serviceIntervalKm   Float             @default(5000)
-  serviceIntervalDays Int               @default(180)
-  status              String            @default("ACTIVE")
+  lastServiceKm       Float     @default(0)
+  serviceIntervalKm   Float     @default(5000)
+  serviceIntervalDays Int       @default(180)
+  status              String    @default("ACTIVE")
   latitude            Float?
   longitude           Float?
   speedKmph           Float?
-  updatedAt           DateTime          @updatedAt
-  routes              Route[]
-  locations           VehicleLocation[]
-  services            VehicleService[]
-  incidents           Incident[]
+  updatedAt           DateTime  @updatedAt
+
+  routes    Route[]
+  locations VehicleLocation[]
+  services  VehicleService[]
+  incidents Incident[]
 }
 
 model VehicleLocation {
@@ -215,7 +263,8 @@ model VehicleLocation {
   longitude  Float
   speedKmph  Float    @default(0)
   recordedAt DateTime @default(now())
-  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
   @@index([vehicleId, recordedAt])
 }
@@ -230,20 +279,42 @@ model BoardingEvent {
   identifier String
   status     BoardingStatus @default(BOARDED)
   scannedAt  DateTime       @default(now())
-  user       User           @relation(fields: [userId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  studentId String?
+  type      NotificationType @default(GENERAL)
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([createdAt])
 }
 
 model Fee {
   id           String        @id @default(cuid())
   pickupStopId String?
-  pickupStop   Stop?         @relation("FeePickupStop", fields: [pickupStopId], references: [id])
   userId       String
   academicYear String
-  amount       Float
-  dueDate      DateTime
-  status       PaymentStatus @default(PENDING)
-  user         User          @relation(fields: [userId], references: [id])
-  payments     Payment[]
+  amount           Float
+  baseAmount       Float         @default(0)
+  discountAmount   Float         @default(0)
+  adjustmentAmount Float         @default(0)
+  dueDate          DateTime
+  status           PaymentStatus @default(PENDING)
+
+  pickupStop Stop?     @relation("FeePickupStop", fields: [pickupStopId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
+  payments   Payment[]
 }
 
 model Payment {
@@ -256,9 +327,12 @@ model Payment {
   gatewayPaymentId String?
   status           PaymentStatus @default(PENDING)
   paidAt           DateTime?
+  refundedAt       DateTime?
+  refundReason     String?
   createdAt        DateTime      @default(now())
-  user             User          @relation(fields: [userId], references: [id])
-  fee              Fee           @relation(fields: [feeId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
+  fee  Fee  @relation(fields: [feeId], references: [id])
 }
 
 model BusPass {
@@ -271,7 +345,8 @@ model BusPass {
   status             PassStatus @default(ACTIVE)
   qrPayload          String
   renewalRequestedAt DateTime?
-  user               User       @relation(fields: [userId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model VehicleService {
@@ -281,24 +356,56 @@ model VehicleService {
   serviceKm   Float
   serviceDate DateTime @default(now())
   notes       String?
-  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 }
 
 model Incident {
-  id             String         @id @default(cuid())
-  vehicleId      String?
-  driverId       String?
-  type           IncidentType
-  status         IncidentStatus @default(OPEN)
-  priority       Int            @default(5)
-  message        String
-  latitude       Float?
-  longitude      Float?
-  createdAt      DateTime       @default(now())
+  id        String  @id @default(cuid())
+  vehicleId String?
+  driverId  String?
+
+  type     IncidentType
+  status   IncidentStatus @default(OPEN)
+  priority Int            @default(5)
+  message  String
+
+  latitude  Float?
+  longitude Float?
+
+  aiConfidence Float?
+  speedBefore  Float?
+  speedAfter   Float?
+  impactGForce Float?
+  tiltDegrees  Float?
+
+  suddenStopDetected Boolean @default(false)
+  impactDetected     Boolean @default(false)
+  rolloverDetected   Boolean @default(false)
+
+  detectionSignals Json?
+
+  verificationStatus   AccidentVerificationStatus @default(NOT_APPLICABLE)
+  verificationDeadline DateTime?
+  driverResponse       String?
+  confirmationSource   String?
+  confirmedAt          DateTime?
+  falseAlarmAt         DateTime?
+
+  emergencyDispatchStatus EmergencyDispatchStatus @default(NOT_REQUIRED)
+  emergencyDispatchAt     DateTime?
+
+  createdAt      DateTime  @default(now())
   acknowledgedAt DateTime?
   resolvedAt     DateTime?
-  vehicle        Vehicle?       @relation(fields: [vehicleId], references: [id])
-  driver         User?          @relation(fields: [driverId], references: [id])
+
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+  driver  User?    @relation(fields: [driverId], references: [id])
+
+  @@index([type])
+  @@index([status])
+  @@index([verificationStatus])
+  @@index([createdAt])
 }
 
 model RouteChange {
@@ -310,7 +417,8 @@ model RouteChange {
   fromDriverId String?
   toDriverId   String?
   createdAt    DateTime @default(now())
-  route        Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
 }
 
 model Complaint {
@@ -330,4 +438,30 @@ model Complaint {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+}
+
+model PasswordResetChallenge {
+  id              String    @id
+  userId          String
+  channel         String
+  codeHash        String
+  passwordVersion Int
+  attempts        Int       @default(0)
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  deliveredAt     DateTime?
+  consumedAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([expiresAt])
+}
+
+model AuthRateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

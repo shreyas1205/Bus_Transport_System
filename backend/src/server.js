@@ -20,15 +20,16 @@ import transportSelectionRoutes from './routes/transportSelection.js';
 import liveLocationRoutes from './routes/liveLocation.js';
 import complaintRoutes from './routes/complaints.js';
 import { startDailyReportJob } from './jobs/dailyReport.js';
+import notificationRoutes from './routes/notifications.js';
 
 const app=express(); const server=http.createServer(app);
 const io=new Server(server,{cors:{origin:process.env.FRONTEND_URL||'http://localhost:5173'}});
 app.set('io',io);
 app.use(cors({origin:process.env.FRONTEND_URL||'http://localhost:5173'}));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'campus-bus-backend',time:new Date().toISOString()}));
 app.use('/api/auth',authRoutes); app.use('/api/dashboard',dashboardRoutes); app.use('/api/routes',routeRoutes); app.use('/api/boarding',boardingRoutes);
-app.use('/api/fees',feeRoutes); app.use('/api/complaints',complaintRoutes); app.use('/api/payments',paymentRoutes); app.use('/api/passes',passRoutes); app.use('/api/maintenance',maintenanceRoutes); app.use('/api/incidents',incidentRoutes); app.use('/api/vehicles',vehicleRoutes); app.use('/api/reports',reportRoutes); app.use('/api/users',userRoutes); app.use('/api/transport-selection',transportSelectionRoutes); app.use('/api/live-location',liveLocationRoutes);
+app.use('/api/fees',feeRoutes); app.use('/api/complaints',complaintRoutes); app.use('/api/payments',paymentRoutes); app.use('/api/passes',passRoutes); app.use('/api/maintenance',maintenanceRoutes); app.use('/api/incidents',incidentRoutes); app.use('/api/vehicles',vehicleRoutes); app.use('/api/reports',reportRoutes); app.use('/api/users',userRoutes); app.use('/api/transport-selection',transportSelectionRoutes); app.use('/api/live-location',liveLocationRoutes);app.use('/api/notifications', notificationRoutes);
 app.use((err,req,res,next)=>{console.error(err);res.status(500).json({message:'Server error',error:process.env.NODE_ENV==='production'?undefined:err.message});});
 const port=Number(process.env.PORT||5000);
 server.listen(port,()=>console.log(`CampusBus API running on http://localhost:${port}`));

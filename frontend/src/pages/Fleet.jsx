@@ -6,7 +6,9 @@ const initial={busNumber:'',registrationNo:'',model:'',capacity:'',odometerKm:'0
 export default function Fleet(){
   const [vehicles,setVehicles]=useState([]); const [form,setForm]=useState(initial); const [notice,setNotice]=useState(''); const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
   const load=()=>api.get('/vehicles').then(r=>setVehicles(r.data)).catch(e=>setError(e.response?.data?.message||'Could not load buses'));
-  useEffect(load,[]);
+  useEffect(() => {
+  load();
+}, []);
   const change=(k,v)=>setForm(f=>({...f,[k]:v}));
   async function create(e){e.preventDefault();setBusy(true);setError('');setNotice('');try{await api.post('/vehicles',form);setNotice('Bus added successfully.');setForm(initial);load();}catch(e){setError(e.response?.data?.message||'Could not add bus')}finally{setBusy(false)}}
   return <>

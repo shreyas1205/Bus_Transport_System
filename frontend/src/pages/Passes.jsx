@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { QRCodeSVG } from 'qrcode.react';
+import { useAuth } from '../auth';
 
 export default function Passes() {
+  const { user } = useAuth();
   const [passes, setPasses] = useState([]);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [dailyQr, setDailyQr] = useState(null);
+  const [dailyBusy, setDailyBusy] = useState(false);
 
   async function load() {
     try {
@@ -58,6 +62,22 @@ export default function Passes() {
     }
   }
 
+
+  async function generateTodayQr() {
+    try {
+      setDailyBusy(true);
+      setError('');
+      setMsg('');
+      const response = await api.get('/passes/daily-qr');
+      setDailyQr(response.data);
+      setMsg('Today’s boarding QR is ready.');
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Unable to generate today’s QR.');
+    } finally {
+      setDailyBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="page-title">
@@ -74,6 +94,30 @@ export default function Passes() {
       {msg && <div className="success">{msg}</div>}
       {error && <div className="error">{error}</div>}
 
+      {user?.role === 'STUDENT' && (
+        <section className="panel daily-qr-card">
+          <div>
+            <span className="eyebrow">TODAY'S BOARDING QR</span>
+            <h3>Daily ride check-in</h3>
+            <p>Generate this QR before boarding. It is valid only for today and can be scanned only by your assigned driver.</p>
+            <button className="primary" onClick={generateTodayQr} disabled={dailyBusy}>
+              {dailyBusy ? 'Generating…' : dailyQr ? 'Refresh today’s QR' : 'Generate today’s QR'}
+            </button>
+          </div>
+          <div className="daily-qr-visual">
+            {dailyQr ? (
+              <>
+                <div className="daily-qr-code"><QRCodeSVG value={dailyQr.token} size={180} /></div>
+                <strong>{dailyQr.date}</strong>
+                <small>{dailyQr.passNumber} · Valid today only</small>
+              </>
+            ) : (
+              <div className="daily-qr-placeholder">QR</div>
+            )}
+          </div>
+        </section>
+      )}
+
       {loading ? (
         <div className="loading-card">Loading bus pass…</div>
       ) : passes.length === 0 ? (
@@ -87,7 +131,7 @@ export default function Passes() {
       ) : (
         <div className="pass-grid">
           {passes.map((pass) => (
-            <section className="pass-card" key={pass.id}>
+            <section className="panel pass-card" key={pass.id}>
               <div>
                 <span className="eyebrow">CAMPUSBUS PASS</span>
                 <h3>{pass.passNumber}</h3>

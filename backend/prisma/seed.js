@@ -12,7 +12,6 @@ async function main(){
   const bus=await prisma.vehicle.create({data:{busNumber:'1',registrationNo:'KA-01-CB-101',model:'Ashok Leyland Viking',capacity:52,odometerKm:12480,lastServiceKm:10000,status:'ACTIVE',latitude:12.9700,longitude:77.5940,speedKmph:26}}).catch(async()=>prisma.vehicle.create({data:{busNumber:'1',registrationNo:'KA-01-CB-101',model:'Ashok Leyland Viking',capacity:52}}));
   const bus2=await prisma.vehicle.create({data:{busNumber:'2',registrationNo:'KA-01-CB-102',model:'Tata Starbus',capacity:40,odometerKm:5000,lastServiceKm:0,status:'ACTIVE',latitude:12.965,longitude:77.589,speedKmph:22}});
   const admin=await upsertUser({name:'Admin User',email:'admin@campusbus.local',passwordHash:hash('Pass@123'),role:'ADMIN',institutionId:'ADM001'});
-  await upsertUser({name:'Fleet Manager',email:'fleet@campusbus.local',passwordHash:hash('Pass@123'),role:'FLEET_MANAGER',institutionId:'FLEET01'});
   const driver=await upsertUser({name:'Ravi Kumar',email:'driver1@campusbus.local',passwordHash:hash('Pass@123'),role:'DRIVER',phone:'9000000001',institutionId:'DRV001'});
   await prisma.driverProfile.create({data:{userId:driver.id,licenseNumber:'KA-DL-99881',licenseExpiry:new Date('2028-10-15')}});
   const route=await prisma.route.create({data:{code:'CB-R1',name:'North Campus Loop',description:'Main Gate → Metro → Hostel → Tech Park',assignedBusId:bus.id,assignedDriverId:driver.id}});
@@ -32,3 +31,4 @@ async function main(){
   console.log('Seed complete. Admin:',admin.email);
 }
 main().catch(e=>{console.error(e);process.exit(1)}).finally(()=>prisma.$disconnect());
+

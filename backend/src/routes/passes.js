@@ -5,11 +5,79 @@ import { auth, allow } from '../middleware.js';
 
 const router = express.Router();
 
+function indiaDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function dailyQrSecret() {
+  const secret = process.env.JWT_SECRET || process.env.DAILY_QR_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('JWT_SECRET (or DAILY_QR_SECRET) must be at least 32 characters.');
+  }
+  return secret;
+}
+
+function makeDailyQrToken({ userId, passId }) {
+  const payload = {
+    v: 1,
+    uid: userId,
+    pid: passId,
+    d: indiaDateKey(),
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', dailyQrSecret())
+    .update(encoded)
+    .digest('base64url');
+  return `CBQR1.${encoded}.${signature}`;
+}
+
+
 function academicYearFor(date = new Date()) {
   const year = date.getFullYear();
   const start = date.getMonth() >= 5 ? year : year - 1;
   return `${start}-${String(start + 1).slice(-2)}`;
 }
+
+
+router.get('/daily-qr', auth, allow('STUDENT'), async (req, res) => {
+  try {
+    const now = new Date();
+    const pass = await prisma.busPass.findFirst({
+      where: {
+        userId: req.user.id,
+        status: 'ACTIVE',
+        validFrom: { lte: now },
+        validUntil: { gte: now },
+      },
+      orderBy: { validUntil: 'desc' },
+    });
+
+    if (!pass) {
+      return res.status(403).json({
+        message: 'An active bus pass is required before generating today’s boarding QR.',
+      });
+    }
+
+    const token = makeDailyQrToken({ userId: req.user.id, passId: pass.id });
+
+    return res.json({
+      token,
+      date: indiaDateKey(now),
+      passNumber: pass.passNumber,
+      validFor: 'TODAY_ONLY',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error?.message || 'Unable to generate today’s boarding QR.',
+    });
+  }
+});
 
 router.get('/my', auth, allow('STUDENT', 'STAFF', 'PARENT'), async (req, res) => {
   try {
@@ -103,3 +171,4 @@ router.post('/:id/renew', auth, allow('STUDENT', 'STAFF', 'PARENT'), async (req,
 });
 
 export default router;
+
