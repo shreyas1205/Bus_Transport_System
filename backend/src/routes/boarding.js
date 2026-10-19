@@ -1,4 +1,5 @@
 import express from 'express';
+import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
@@ -25,7 +26,7 @@ function dailyQrSecret() {
 function verifyDailyQrToken(token) {
   const parts = String(token || '').trim().split('.');
   if (parts.length !== 3 || parts[0] !== 'CBQR1') {
-    return { ok: false, message: 'This is not a valid CampusBus daily QR.' };
+    return { ok: false, message: 'This is not a valid NaviGuard daily QR.' };
   }
 
   const [, encoded, suppliedSignature] = parts;
@@ -64,74 +65,35 @@ function verifyDailyQrToken(token) {
 // ======================================================
 
 function startOfToday() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  return start;
+  return getDayRange(indiaDateKey()).start;
 }
 
-function getDayRange(dateText) {
-  if (!dateText) {
-    const start = startOfToday();
-    const end = new Date(start);
+function getDayRange(dateText = indiaDateKey()) {
+  const key = dateText || indiaDateKey();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+  const start = new Date(`${key}T00:00:00+05:30`);
+  if (!Number.isFinite(start.getTime()) || indiaDateKey(start) !== key) return null;
+  return { start, end: new Date(start.getTime() + 86400000) };
+}
 
-    end.setDate(
-      end.getDate() + 1
-    );
-
-    return {
-      start,
-      end
-    };
-  }
-
-  const match =
-    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
-      dateText
-    );
-
-  if (!match) {
-    return null;
-  }
-
-  const year =
-    Number(match[1]);
-
-  const month =
-    Number(match[2]);
-
-  const day =
-    Number(match[3]);
-
-  const start =
-    new Date(
-      year,
-      month - 1,
-      day,
-      0,
-      0,
-      0,
-      0
-    );
-
-  if (
-    start.getFullYear() !== year ||
-    start.getMonth() !== month - 1 ||
-    start.getDate() !== day
-  ) {
-    return null;
-  }
-
-  const end =
-    new Date(start);
-
-  end.setDate(
-    end.getDate() + 1
-  );
-
-  return {
-    start,
-    end
-  };
+// Serialize state checks and inserts across server processes, without schema changes.
+async function createJourneyEvent({ data }) {
+  return prisma.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${data.userId}))`;
+    const route = data.routeId ? await tx.route.findUnique({ where: { id: data.routeId } }) : null;
+    const bus = data.vehicleId ? await tx.vehicle.findUnique({ where: { id: data.vehicleId } }) : null;
+    if (!route?.isActive || !bus || bus.status !== 'ACTIVE') throw Object.assign(new Error('An active route and ACTIVE bus are required.'), { status: 409 });
+    const events = await tx.boardingEvent.findMany({
+      where: { userId: data.userId, scannedAt: { gte: startOfToday() } }
+    });
+    if (events.some(e => e.status === data.status || e.status === 'DROPPED_OFF')) {
+      throw Object.assign(new Error('This journey event is already recorded today.'), { status: 409 });
+    }
+    if (data.status === 'DROPPED_OFF' && !events.some(e => e.status === 'BOARDED' && e.routeId === data.routeId)) {
+      throw Object.assign(new Error('Student must be boarded before drop-off.'), { status: 409 });
+    }
+    return tx.boardingEvent.create({ data });
+  });
 }
 
 // ======================================================
@@ -194,35 +156,33 @@ async function getTodayDropOff(
 // DRIVER ROUTE HELPER
 // ======================================================
 
-async function getDriverRoute(
-  driverId
-) {
-  return prisma.route.findFirst({
-    where: {
-      assignedDriverId:
-        driverId,
-
-      isActive:
-        true
-    },
-
+async function getDriverRoute(driverId) {
+  const now = new Date();
+  const routes = await prisma.route.findMany({
+    where: { isActive: true, assignedBus: { status: 'ACTIVE' }, OR: [
+      { assignedDriverId: driverId },
+      { temporaryDriverAssignments: { some: {
+        status: { in: ['SCHEDULED', 'ACTIVE'] },
+        OR: [{ temporaryDriverId: driverId }, { originalDriverId: driverId }]
+      } } }
+    ] },
     include: {
-      assignedBus:
-        true,
-
-      stops: {
-        orderBy: {
-          sequence:
-            'asc'
-        },
-
-        include: {
-          stop:
-            true
-        }
+      assignedBus: true,
+      stops: { orderBy: { sequence: 'asc' }, include: { stop: true } },
+      temporaryDriverAssignments: {
+        where: { status: { in: ['SCHEDULED', 'ACTIVE'] } },
+        orderBy: { startsAt: 'desc' }
       }
     }
   });
+  const operational = routes.filter(route => {
+    const assignments = route.temporaryDriverAssignments || [];
+    const current = assignments.find(a => a.startsAt <= now && a.endsAt > now);
+    const expired = assignments.find(a => a.status === 'ACTIVE' && a.endsAt <= now && route.assignedDriverId === a.temporaryDriverId);
+    return (current ? current.temporaryDriverId : expired ? expired.originalDriverId : route.assignedDriverId) === driverId;
+  });
+  // An active replacement duty takes precedence over the driver's regular route.
+  return operational.find(r => r.temporaryDriverAssignments.some(a => a.temporaryDriverId === driverId && a.startsAt <= now && a.endsAt > now)) || operational[0] || null;
 }
 
 // ======================================================
@@ -721,7 +681,7 @@ router.post(
       // --------------------------------------------------
 
       const event =
-        await prisma.boardingEvent.create({
+        await createJourneyEvent({
           data: {
             userId:
               passenger.id,
@@ -822,6 +782,7 @@ router.post(
           Boolean(pass)
       });
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'BOARDING SCAN ERROR:',
         error
@@ -919,6 +880,7 @@ router.get(
         events
       );
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'TODAY BOARDING ERROR:',
         error
@@ -1383,12 +1345,7 @@ router.get(
       return res.json({
         date:
           dateText ||
-          new Date()
-            .toISOString()
-            .slice(
-              0,
-              10
-            ),
+          indiaDateKey(),
 
         summary,
 
@@ -1421,6 +1378,7 @@ router.get(
         records
       });
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'BOARDING HISTORY ERROR:',
         error
@@ -1713,6 +1671,7 @@ router.get(
           )
       });
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'DRIVER ROSTER ERROR:',
         error
@@ -1834,9 +1793,7 @@ router.post(
       if (
         req.user.role ===
           'DRIVER' &&
-        route
-          .assignedDriverId !==
-          req.user.id
+        (!route.isActive || (await getDriverRoute(req.user.id))?.id !== route.id)
       ) {
         return res
           .status(403)
@@ -1899,7 +1856,7 @@ router.post(
         }
 
         const event =
-          await prisma.boardingEvent.create({
+          await createJourneyEvent({
             data: {
               userId:
                 student.id,
@@ -2041,6 +1998,7 @@ router.post(
           `${student.name} marked not boarded.`
       });
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'BOARDING TOGGLE ERROR:',
         error
@@ -2170,9 +2128,7 @@ router.post(
       if (
         req.user.role ===
           'DRIVER' &&
-        route
-          .assignedDriverId !==
-          req.user.id
+        (!route.isActive || (await getDriverRoute(req.user.id))?.id !== route.id)
       ) {
         return res
           .status(403)
@@ -2234,7 +2190,7 @@ router.post(
       // --------------------------------------------------
 
       const event =
-        await prisma.boardingEvent.create({
+        await createJourneyEvent({
           data: {
             userId:
               student.id,
@@ -2315,6 +2271,7 @@ router.post(
           `${student.name} marked safely dropped off.`
       });
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'DROP OFF ERROR:',
         error
@@ -2338,6 +2295,7 @@ router.get(
   '/my-status',
 
   auth,
+  requireVerifiedParentTransport,
 
   allow(
     'STUDENT',
@@ -2617,6 +2575,7 @@ router.get(
           null
       });
     } catch (error) {
+      if (error.status === 409) return res.status(409).json({ message: error.message });
       console.error(
         'BOARDING STATUS ERROR:',
         error

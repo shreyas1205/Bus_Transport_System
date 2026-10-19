@@ -13,7 +13,8 @@ const initial = {
   course: '',
   semester: '',
   department: '',
-  studentId: ''
+  studentId: '',
+  guardianPhone: ''
 };
 
 const roleAliases = {
@@ -70,10 +71,13 @@ function parseRoster(text) {
             : 1
         ] || '';
 
+      const contact = parts[roleIndex >= 0 ? roleIndex + 2 : 2] || '';
       return {
         name,
         role,
-        institutionId
+        institutionId,
+        ...(role === 'STUDENT' ? { guardianPhone: contact } : {}),
+        ...(role === 'PARENT' ? { phone: contact } : {})
       };
     });
 }
@@ -102,6 +106,8 @@ function getStatusStyle(status) {
 export default function Users() {
   const [users, setUsers] =
     useState([]);
+
+  const [guardianContacts, setGuardianContacts] = useState({});
 
   const [role, setRole] =
     useState('');
@@ -255,7 +261,9 @@ export default function Users() {
         return {
           name: parts[0] || '',
           role: roleAliases[(parts[1] || '').toLowerCase()] || (parts[1] || '').toUpperCase(),
-          institutionId: parts[2] || ''
+          institutionId: parts[2] || '',
+          ...(String(parts[1]).toUpperCase() === 'STUDENT' ? { guardianPhone: parts[3] || '' } : {}),
+          ...(String(parts[1]).toUpperCase() === 'PARENT' ? { phone: parts[3] || '' } : {})
         };
       }).filter(Boolean);
       setAiRows(rows);
@@ -316,6 +324,13 @@ export default function Users() {
       setDraftPhones(
         phones
       );
+      const contacts = {};
+      data.forEach(user => {
+        if (user.role === 'STUDENT') contacts[user.id] = user.studentProfile?.guardianPhone || '';
+        if (user.role === 'PARENT') contacts[user.id] = user.phone || '';
+      });
+      setGuardianContacts(contacts);
+
     } catch (e) {
       console.error(
         'LOAD USERS ERROR:',
@@ -416,6 +431,23 @@ export default function Users() {
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveGuardianContact(user) {
+    try {
+      setSavingId(user.id);
+      setError('');
+      setNotice('');
+      const response = await api.patch(`/users/${user.id}/guardian-contact`, {
+        phone: guardianContacts[user.id] || ''
+      });
+      setNotice(response.data.message);
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not save guardian contact');
+    } finally {
+      setSavingId('');
     }
   }
 
@@ -721,7 +753,7 @@ export default function Users() {
       url;
 
     anchor.download =
-      'campusbus-generated-credentials.csv';
+      'naviguard-generated-credentials.csv';
 
     anchor.click();
 
@@ -845,7 +877,7 @@ export default function Users() {
       setNotice(
         response.data
           ?.message ||
-          'CampusBus account created successfully.'
+          'NaviGuard account created successfully.'
       );
 
       setCollegeRecord(
@@ -866,7 +898,7 @@ export default function Users() {
       setError(
         e.response?.data
           ?.message ||
-          'Could not create CampusBus account.'
+          'Could not create NaviGuard account.'
       );
     } finally {
       setCollegeImportBusy(
@@ -902,7 +934,7 @@ export default function Users() {
           </h2>
 
           <p>
-            Create and manage CampusBus
+            Create and manage NaviGuard
             accounts, import students and
             staff from college records,
             and review driver details.
@@ -1045,7 +1077,7 @@ export default function Users() {
 
               <p>
                 Enter a student USN or
-                staff ID. CampusBus will
+                staff ID. NaviGuard will
                 fetch the college record
                 before creating the
                 account.
@@ -1246,7 +1278,7 @@ export default function Users() {
                   }}
                 >
                   This college member
-                  already has a CampusBus
+                  already has a NaviGuard
                   account
                   {collegeRecord
                     .existingUser
@@ -1274,7 +1306,7 @@ export default function Users() {
                   >
                     {collegeImportBusy
                       ? 'Creating account…'
-                      : 'Create CampusBus account'}
+                      : 'Create NaviGuard account'}
                   </button>
 
                   <small>
@@ -1300,7 +1332,7 @@ export default function Users() {
           <div className="onboarding-head">
             <div>
               <span className="eyebrow">ACCOUNT ONBOARDING</span>
-              <h3>Add multiple CampusBus members</h3>
+              <h3>Add multiple NaviGuard members</h3>
               <p>Add people normally, paste a roster, or import a CSV. Review everything before accounts are created.</p>
             </div>
             <div className="onboarding-ready">
@@ -1330,19 +1362,21 @@ export default function Users() {
               ) : (
                 <div className="member-edit-list">
                   {aiRows.map((item,index) => {
-                    const valid=item.name && ['STUDENT','DRIVER','PARENT'].includes(item.role);
+                    const valid=item.name && ['STUDENT','DRIVER','PARENT'].includes(item.role) && (item.role !== 'STUDENT' || !!item.guardianPhone) && (item.role !== 'PARENT' || !!item.phone);
                     return <div className={`member-edit-row ${valid ? '' : 'needs-attention'}`} key={index}>
                       <div className="member-index">{String(index+1).padStart(2,'0')}</div>
                       <label><span>Name</span><input value={item.name} onChange={e=>updateAiPerson(index,'name',e.target.value)} placeholder="Full name"/></label>
                       <label><span>Role</span><select value={item.role||''} onChange={e=>updateAiPerson(index,'role',e.target.value)}><option value="">Select role</option><option value="STUDENT">Student</option><option value="DRIVER">Driver</option><option value="PARENT">Parent</option></select></label>
                       <label><span>Institution ID <em>optional</em></span><input value={item.institutionId||''} onChange={e=>updateAiPerson(index,'institutionId',e.target.value)} placeholder="Auto-generate if blank"/></label>
+                      {item.role === 'STUDENT' && <label><span>Guardian phone</span><input value={item.guardianPhone||''} onChange={e=>updateAiPerson(index,'guardianPhone',e.target.value)} placeholder="Parent's phone" inputMode="tel" /></label>}
+                      {item.role === 'PARENT' && <label><span>Parent phone</span><input value={item.phone||''} onChange={e=>updateAiPerson(index,'phone',e.target.value)} placeholder="Guardian's phone" inputMode="tel" /></label>}
                       <div className={`member-ready-state ${valid?'ready':'missing'}`}>{valid?'Ready':'Needs details'}</div>
                       <button type="button" className="member-remove" onClick={()=>removeAiPerson(index)}>×</button>
                     </div>
                   })}
                 </div>
               )}
-              {aiRows.length>0 && <div className="member-create-bar"><div><strong>{aiRows.filter(x=>x.name&&['STUDENT','DRIVER','PARENT'].includes(x.role)).length} of {aiRows.length} ready</strong><span>Login IDs and temporary passwords are generated automatically.</span></div><button type="button" className="primary create-members-button" onClick={aiCreate} disabled={aiBusy||aiRows.some(x=>!x.name||!['STUDENT','DRIVER','PARENT'].includes(x.role))}>{aiBusy?'Creating accounts…':`Create ${aiRows.length} account${aiRows.length===1?'':'s'}`}</button></div>}
+              {aiRows.length>0 && <div className="member-create-bar"><div><strong>{aiRows.filter(x=>x.name&&['STUDENT','DRIVER','PARENT'].includes(x.role)).length} of {aiRows.length} ready</strong><span>Login IDs and temporary passwords are generated automatically.</span></div><button type="button" className="primary create-members-button" onClick={aiCreate} disabled={aiBusy||aiRows.some(x=>!x.name||!['STUDENT','DRIVER','PARENT'].includes(x.role)||(x.role==='STUDENT'&&!x.guardianPhone)||(x.role==='PARENT'&&!x.phone))}>{aiBusy?'Creating accounts…':`Create ${aiRows.length} account${aiRows.length===1?'':'s'}`}</button></div>}
             </div>
           )}
 
@@ -1491,6 +1525,7 @@ export default function Users() {
                 }
                 placeholder="9000000010"
                 inputMode="tel"
+                required={form.role === 'PARENT'}
               />
             </label>
 
@@ -1596,6 +1631,16 @@ export default function Users() {
                     placeholder="5"
                   />
                 </label>
+                <label>
+                  Guardian mobile (automatic Parent linking)
+                  <input
+                    value={form.guardianPhone}
+                    onChange={e => change('guardianPhone', e.target.value)}
+                    placeholder="Parent's registered mobile"
+                    inputMode="tel"
+                    required
+                  />
+                </label>
               </>
             )}
 
@@ -1621,26 +1666,11 @@ export default function Users() {
               </label>
             )}
 
-            {form.role ===
-              'PARENT' && (
-              <label>
-                Student ID
-
-                <input
-                  value={
-                    form.studentId
-                  }
-                  onChange={
-                    e =>
-                      change(
-                        'studentId',
-                        e.target
-                          .value
-                      )
-                  }
-                  placeholder="Student user ID"
-                />
-              </label>
+            {form.role === 'PARENT' && (
+              <p className="full-row" style={{color:'#8fc9e5',fontSize:12}}>
+                Parent accounts link automatically when the registered phone matches
+                a Student's guardian mobile. No Student ID is needed.
+              </p>
             )}
 
             <div className="full-row">
@@ -1688,7 +1718,7 @@ export default function Users() {
         <div className="users-directory-head">
           <div>
             <span className="eyebrow">ACCOUNT DIRECTORY</span>
-            <h3>CampusBus members</h3>
+            <h3>NaviGuard members</h3>
             <p>{filteredUsers.length} account{filteredUsers.length === 1 ? '' : 's'} shown</p>
           </div>
           <input
@@ -1736,6 +1766,21 @@ export default function Users() {
                         <button type="button" className="secondary driver-detail-btn" onClick={() => setSelectedDriver(user)}>
                           View driver details
                         </button>
+                      ) : ['STUDENT','PARENT'].includes(user.role) ? (
+                        <div style={{display:'grid',gap:5,minWidth:180}}>
+                          <small style={{color:'#8aa5ba'}}>{user.role === 'STUDENT' ? 'Guardian mobile' : 'Parent mobile'}</small>
+                          <input style={{minWidth:150,width:'100%'}} inputMode="tel"
+                            value={guardianContacts[user.id] ?? ''}
+                            onChange={e => setGuardianContacts(prev => ({...prev,[user.id]:e.target.value}))}
+                            placeholder="10-digit mobile" />
+                          <button type="button" className="secondary" disabled={savingId === user.id}
+                            onClick={() => saveGuardianContact(user)}>
+                            {savingId === user.id ? 'Saving…' : 'Save contact / auto-link'}
+                          </button>
+                          {user.role === 'PARENT' && <small style={{color:user.parentProfile?.studentId?'#67c7a5':'#e6af61'}}>
+                            {user.parentProfile?.studentId ? 'Linked to student' : 'Awaiting matching student'}
+                          </small>}
+                        </div>
                       ) : <span style={{color:'#58758d'}}>—</span>}
                     </td>
                   </tr>

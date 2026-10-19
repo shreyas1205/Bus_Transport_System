@@ -3,6 +3,7 @@ import crypto from 'crypto';
 
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
+import { normalizeGuardianPhone, reconcileGuardianLinks } from '../services/autoLinkGuardians.js';
 
 import {
   findCollegeRecord
@@ -409,7 +410,7 @@ router.post(
           .json({
 
             message:
-              'This college member already has a CampusBus account.',
+              'This college member already has a NaviGuard account.',
 
             user:
               existing
@@ -492,7 +493,10 @@ router.post(
 
                   semester:
                     record.semester ||
-                    null
+                    null,
+
+                  guardianPhone:
+                    normalizeGuardianPhone(record.guardianPhone)
 
                 }
 
@@ -528,6 +532,10 @@ router.post(
             }
 
 
+            if (record.role === 'STUDENT') {
+              await reconcileGuardianLinks(tx);
+            }
+
             return user;
 
           }
@@ -540,7 +548,7 @@ router.post(
         .json({
 
           message:
-            'CampusBus account created from college record.',
+            'NaviGuard account created from college record.',
 
           user: {
 
@@ -600,7 +608,7 @@ router.post(
         .json({
 
           message:
-            'Could not create CampusBus account from college record.'
+            'Could not create NaviGuard account from college record.'
 
         });
 
@@ -659,7 +667,10 @@ router.get(
               true,
 
             driverProfile:
-              true
+              true,
+
+            studentProfile: { select: { guardianPhone: true } },
+            parentProfile: { select: { studentId: true } }
 
           },
 
@@ -735,6 +746,8 @@ router.post(
 
       semester,
 
+      guardianPhone,
+
       department,
 
       studentId
@@ -807,6 +820,14 @@ router.post(
 
     }
 
+
+    const normalizedGuardian = normalizeGuardianPhone(guardianPhone);
+    if (role === 'STUDENT' && guardianPhone && !normalizedGuardian) {
+      return res.status(400).json({message: 'Guardian phone must be a valid 10-digit Indian mobile number.'});
+    }
+    if (role === 'PARENT' && !normalizeGuardianPhone(phone)) {
+      return res.status(400).json({message: 'A valid parent mobile number is needed for automatic guardian linking.'});
+    }
 
     try {
 
@@ -922,7 +943,9 @@ router.post(
 
                   semester:
                     semester?.trim() ||
-                    null
+                    null,
+
+                  guardianPhone: normalizedGuardian
 
                 }
 
@@ -975,10 +998,9 @@ router.post(
                   userId:
                     user.id,
 
-                  studentId:
-                    studentId
-                      ?.trim() ||
-                    null
+                  // Linking is resolved from guardian and parent mobile numbers.
+                  // Ignore legacy free-text studentId for new accounts.
+                  studentId: null
 
                 }
 
@@ -986,6 +1008,10 @@ router.post(
 
             }
 
+
+            if (role === 'STUDENT' || role === 'PARENT') {
+              await reconcileGuardianLinks(tx);
+            }
 
             return user;
 
@@ -1061,6 +1087,45 @@ router.post(
   }
 );
 
+
+// ======================================================
+// UPDATE TRUSTED GUARDIAN CONTACT (NOT MANUAL PAIRING)
+// ======================================================
+router.patch('/:id/guardian-contact', auth, allow('ADMIN'), async (req, res) => {
+  try {
+    const value = normalizeGuardianPhone(req.body?.phone);
+    if (!value) return res.status(400).json({message:'Enter a valid 10-digit Indian mobile number.'});
+    const result = await prisma.$transaction(async tx => {
+      const account = await tx.user.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, role: true, studentProfile: {select:{id:true}}, parentProfile: {select:{id:true}} }
+      });
+      if (!account || !['STUDENT','PARENT'].includes(account.role)) return null;
+      if (account.role === 'STUDENT') {
+        await tx.studentProfile.upsert({
+          where: { userId: account.id },
+          create: { userId: account.id, guardianPhone: value },
+          update: { guardianPhone: value }
+        });
+      } else {
+        await tx.user.update({ where: { id: account.id }, data: { phone: value } });
+        await tx.parentProfile.upsert({
+          where: { userId: account.id },
+          create: { userId: account.id, studentId: null },
+          update: {}
+        });
+      }
+      const sync = await reconcileGuardianLinks(tx);
+      return { role:account.role, ...sync };
+    });
+    if (!result) return res.status(404).json({message:'Student or Parent account not found.'});
+    return res.json({message: result.linked ? 'Guardian contact saved and accounts linked automatically.' :
+      'Guardian contact saved. Waiting for a matching unique parent/student contact.', ...result});
+  } catch (error) {
+    console.error('Guardian contact update error:', error);
+    return res.status(500).json({message:'Could not update guardian contact.'});
+  }
+});
 
 // ======================================================
 // AI BULK ACCOUNT CREATION
@@ -1164,6 +1229,9 @@ router.post(
               ''
             ).trim(),
 
+          guardianPhone:
+            String(record?.guardianPhone || '').trim(),
+
           course:
             String(
               record?.course ||
@@ -1238,6 +1306,14 @@ router.post(
 
     }
 
+
+    const invalidPhone = records.find(record =>
+      (record.role === 'PARENT' && !normalizeGuardianPhone(record.phone)) ||
+      (record.role === 'STUDENT' && record.guardianPhone && !normalizeGuardianPhone(record.guardianPhone))
+    );
+    if (invalidPhone) {
+      return res.status(400).json({message: `Row ${invalidPhone.index + 1}: enter a valid parent / guardian mobile number.`});
+    }
 
     try {
 
@@ -1565,7 +1641,9 @@ router.post(
 
                     semester:
                       record.semester ||
-                      null
+                      null,
+
+                    guardianPhone: normalizeGuardianPhone(record.guardianPhone)
 
                   }
 
@@ -1590,9 +1668,7 @@ router.post(
                     userId:
                       user.id,
 
-                    studentId:
-                      record.studentId ||
-                      null
+                    studentId: null
 
                   }
 
@@ -1626,6 +1702,7 @@ router.post(
             }
 
 
+            await reconcileGuardianLinks(tx);
             return output;
 
           }
@@ -1990,7 +2067,7 @@ router.patch(
           .json({
 
             message:
-              'Invalid CampusBus role'
+              'Invalid NaviGuard role'
 
           });
 

@@ -61,7 +61,7 @@ export default function Fees() {
       if(!(await ensureRazorpay())){setError('Could not load secure payment checkout.');setBusy('');return}
       const options={
         key:r.data.keyId,amount:r.data.order.amount,currency:r.data.order.currency,
-        name:'CampusBus',description:`Transport fee ${fee.academicYear}`,order_id:r.data.order.id,
+        name:'NaviGuard',description:`Transport fee ${fee.academicYear}`,order_id:r.data.order.id,
         method:{upi:method==='UPI',card:method==='CARD',netbanking:method==='NETBANKING'},
         handler:async(response)=>{
           try{
@@ -71,7 +71,7 @@ export default function Fees() {
           finally{setBusy('')}
         },
         modal:{ondismiss:()=>setBusy('')},
-        prefill:{name:data.owner?.name||user?.name||'CampusBus User',email:data.owner?.email||''},
+        prefill:{name:data.owner?.name||user?.name||'NaviGuard User',email:data.owner?.email||''},
         theme:{color:'#2563EB'},
       };
       new window.Razorpay(options).open();
@@ -106,7 +106,7 @@ export default function Fees() {
         )}
       </div>
       <div className="payment-selection-status"><b>{method==='UPI'?'UPI / QR':method==='CARD'?'Credit / Debit Card':'Net Banking'}</b><span>{totals.pending>0?`Selected for your next payment · ${money(totals.pending)} outstanding`:'No payment required · your transport fee is fully paid'}</span></div>
-      <small className="payment-note">The method buttons select the checkout type. When a fee is pending, use Pay securely in the fee record below. Development without gateway keys uses CampusBus sandbox payment.</small>
+      <small className="payment-note">The method buttons select the checkout type. When a fee is pending, use Pay securely in the fee record below. Development without gateway keys uses NaviGuard sandbox payment.</small>
     </section>
 
     <section className="panel fee-records">

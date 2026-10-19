@@ -51,7 +51,8 @@ const self = [
 ];
 
 const dashboardRoles = [
-  'ADMIN'
+  'ADMIN',
+  'PARENT'
 ];
 
 const routeRoles = [

@@ -1,14 +1,14 @@
 // ======================================================
-// CAMPUSBUS COLLEGE DIRECTORY INTEGRATION
+// NAVIGUARD COLLEGE DIRECTORY INTEGRATION
 // ======================================================
 //
 // DEVELOPMENT:
-// Uses mock college records so CampusBus can be developed
+// Uses mock college records so NaviGuard can be developed
 // without access to the real college database.
 //
 // PRODUCTION:
 // This service can later call the college ERP/API without
-// changing the CampusBus Users page or account-creation flow.
+// changing the NaviGuard Users page or account-creation flow.
 // ======================================================
 
 
@@ -157,6 +157,10 @@ function normalizeCollegeRecord(record) {
 
     phone:
       phone || null,
+
+    // Guardian contact may be supplied by a verified college ERP.
+    guardianPhone:
+      record.guardianPhone ? String(record.guardianPhone).trim() : null,
 
     course:
       record.course

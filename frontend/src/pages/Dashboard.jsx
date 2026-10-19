@@ -7,10 +7,80 @@ const money=n=>`₹${Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:
 function Bars({data,valueKey='boarded',suffix=''}){const max=Math.max(1,...data.map(x=>Number(x[valueKey]||0)));return <div className="analytics-bars">{data.map(x=><div className="analytics-bar-col" key={x.key||x.label}><b>{x[valueKey]}{suffix}</b><div><i style={{height:`${Math.max(5,Number(x[valueKey]||0)/max*100)}%`}}/></div><span>{x.label}</span></div>)}</div>}
 function Donut({value,label}){const v=Math.max(0,Math.min(100,Number(value||0)));return <div className="analytics-donut" style={{'--p':`${v*3.6}deg`}}><div><b>{v}%</b><span>{label}</span></div></div>}
 
+// Parent-specific dashboard. Uses the existing Parent-authenticated API endpoint;
+// the browser never downloads a list of students or supplies a student ID.
+function ParentDashboard({user}) {
+ const [snapshot,setSnapshot]=useState(null);
+ const [loading,setLoading]=useState(true);
+ const [error,setError]=useState('');
+ const [revision,setRevision]=useState(0);
+ useEffect(()=>{
+  let mounted=true;
+  setSnapshot(null);
+  setLoading(true);
+  setError('');
+  const refresh=async()=>{
+   try{
+    const response=await api.get('/boarding/my-status');
+    if(mounted){setSnapshot(response.data);setError('');}
+   }catch(e){
+    if(mounted){setSnapshot(null);setError(e.response?.data?.message||'Unable to load linked student details.');}
+   }finally{if(mounted)setLoading(false);}
+  };
+  refresh();
+  const timer=setInterval(refresh,30000);
+  return()=>{mounted=false;clearInterval(timer);};
+ },[user?.id,revision]);
+ const student=snapshot?.student;
+ const route=snapshot?.route;
+ const currentStatus=snapshot?.status||'NOT_BOARDED';
+ const displayStatus=currentStatus.replaceAll('_',' ');
+ const journeyInfo=currentStatus==='DROPPED_OFF'?'Drop-off confirmed':currentStatus==='BOARDED'?'Student is boarded':'Not boarded today';
+ const timestamp=currentStatus==='DROPPED_OFF'?snapshot?.droppedOffAt:snapshot?.boardedAt;
+ const when=(value)=>{
+  if(!value)return 'No event recorded';
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?'No event recorded':date.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+ };
+ return <div className="dashboard-page">
+  <section className="dashboard-hero">
+   <div><span className="eyebrow">FAMILY TRANSPORT</span><h2>Welcome, {user?.name||'Parent'}</h2><p>Your linked student’s campus bus, pickup point and today's journey status.</p></div>
+   <div className="hero-status"><span className="status-ring"><i/></span><div><b>Family transport</b><small>Updates every 30 seconds</small></div></div>
+  </section>
+  {error&&<div className="error" role="alert">{error} <button type="button" onClick={()=>setRevision(v=>v+1)}>Retry</button></div>}
+  {loading&&!snapshot?<div className="loading-card"><span className="loading-pulse"/> Loading linked student…</div>:!student?
+   <section className="panel" style={{padding:24}}>
+    <span className="panel-kicker">ACCOUNT CONNECTION</span>
+    <h3>No linked student found</h3>
+    <p>No verified student link is available. Contact Admin to verify your guardianship and student link. Phone matching alone does not verify guardianship.</p>
+    <p>If the contact details were just updated, refresh this page after the account records are reconciled.</p>
+    <button type="button" onClick={()=>setRevision(v=>v+1)}>Refresh student link</button>
+   </section>
+   :<>
+    <section className="panel" style={{padding:24,marginBottom:20}}>
+     <div className="panel-head"><div><span className="panel-kicker">MY STUDENT</span><h3>{student.name}</h3><p>College ID: {student.institutionId||'Not provided'}</p></div><span className="health-pill">Linked account</span></div>
+     <p style={{marginTop:12}}>Daily transport details are loaded from your Parent account, not from a manually selected Student ID.</p>
+    </section>
+    <section className="stat-grid">
+     <article className="stat-card"><div className="stat-card-top"><span className="stat-icon">✓</span></div><strong>{displayStatus}</strong><small>Today's boarding status</small><p>{journeyInfo}</p></article>
+     <article className="stat-card"><div className="stat-card-top"><span className="stat-icon">↝</span></div><strong>{route?.code||'—'}</strong><small>Assigned route</small><p>{route?.name||'No route assigned'}</p></article>
+     <article className="stat-card"><div className="stat-card-top"><span className="stat-icon">▤</span></div><strong>{route?.busNumber||route?.registrationNo||'—'}</strong><small>Assigned bus</small><p>{route?.registrationNo||'Bus details not available'}</p></article>
+     <article className="stat-card"><div className="stat-card-top"><span className="stat-icon">⌖</span></div><strong>{snapshot?.pickupStop||'—'}</strong><small>Pickup stop</small><p>{snapshot?.pickupStop?'Registered pickup location':'No pickup stop assigned'}</p></article>
+    </section>
+    <section className="dashboard-grid">
+     <article className="panel" style={{padding:24}}><span className="panel-kicker">TODAY’S JOURNEY</span><h3>{journeyInfo}</h3><p>Latest status update: {when(timestamp)}</p><p>Boarded: {snapshot?.boarded?'Yes':'No'} · Dropped off: {snapshot?.droppedOff?'Yes':'No'}</p></article>
+     <article className="panel" style={{padding:24}}><span className="panel-kicker">ROUTE CONTACT</span><h3>{route?.name||'Route not yet assigned'}</h3><p>Regular assigned driver: {route?.driver?.name||'Not assigned'}</p><p>Driver phone: {route?.driver?.phone||'Not available'}</p><p style={{fontSize:12,opacity:.75}}>Temporary drivers may differ from the regular assigned driver.</p></article>
+    </section>
+    <button type="button" onClick={()=>setRevision(v=>v+1)} style={{marginTop:16}}>Refresh journey status</button>
+   </>}
+  <p style={{fontSize:12,opacity:.7,marginTop:16}}>For a real college deployment, guardian identity and contact ownership must be verified before enabling private student tracking.</p>
+ </div>;
+}
+
 export default function Dashboard(){
  const {user}=useAuth(),[summary,setSummary]=useState(null),[analytics,setAnalytics]=useState(null),[alerts,setAlerts]=useState([]),[routes,setRoutes]=useState([]),[error,setError]=useState('');
- async function load(){try{setError('');const calls=[api.get('/dashboard/summary'),api.get('/routes')];if(user?.role==='ADMIN')calls.push(api.get('/dashboard/analytics'));const out=await Promise.all(calls);setSummary(out[0].data);setRoutes(out[1].data);if(out[2])setAnalytics(out[2].data);if(['ADMIN','DRIVER'].includes(user?.role)){const r=await api.get('/incidents');setAlerts(r.data)}}catch(e){setError(e.response?.data?.message||'Unable to load command center.')}}
- useEffect(()=>{load();const socket=io(import.meta.env.VITE_SOCKET_URL||'http://localhost:4000');['sos:alert','accident:possible','accident:confirmed','fleet:breakdown','complaint:new'].forEach(ev=>socket.on(ev,load));const timer=setInterval(load,60000);return()=>{socket.disconnect();clearInterval(timer)}},[user?.role]);
+ async function load(){if(user?.role==='PARENT')return;try{setError('');const calls=[api.get('/dashboard/summary'),api.get('/routes')];if(user?.role==='ADMIN')calls.push(api.get('/dashboard/analytics'));const out=await Promise.all(calls);setSummary(out[0].data);setRoutes(out[1].data);if(out[2])setAnalytics(out[2].data);if(['ADMIN','DRIVER'].includes(user?.role)){const r=await api.get('/incidents');setAlerts(r.data)}}catch(e){setError(e.response?.data?.message||'Unable to load command center.')}}
+ useEffect(()=>{if(user?.role==='PARENT')return;load();const socket=io(import.meta.env.VITE_SOCKET_URL||'http://localhost:4000');['sos:alert','accident:possible','accident:confirmed','fleet:breakdown','complaint:new'].forEach(ev=>socket.on(ev,load));const timer=setInterval(load,60000);return()=>{socket.disconnect();clearInterval(timer)}},[user?.role]);
  const stats=useMemo(()=>analytics?[
   ['Active fleet',`${analytics.fleet.active}/${analytics.fleet.total}`,'▤',`${analytics.fleet.breakdown} breakdown`],
   ['Active routes',analytics.network.activeRoutes,'↝',`${analytics.network.fullyAssigned} fully assigned`],
@@ -18,6 +88,7 @@ export default function Dashboard(){
   ['Collected',money(analytics.finance.collected),'₹',`${analytics.finance.collectionRate}% collection rate`],
   ['Open incidents',analytics.safety.open,'!','Last 7 days']
  ]:summary?[['Active buses',summary.vehicles,'▤','Fleet currently active'],['Active routes',summary.routes,'↝','Transport network'],['Boarded today',summary.todayBoarding,'✓','Verified boarding'],['Pending fees',summary.pendingFees,'₹','Payments requiring action'],['Open incidents',summary.incidents,'!','Safety cases']]:[],[summary,analytics]);
+ if(user?.role==='PARENT')return <ParentDashboard user={user}/>;
  if(!summary)return <div className="loading-card"><span className="loading-pulse"/> Loading command center…</div>;
  return <div className="dashboard-page">
   {error&&<div className="error">{error}</div>}

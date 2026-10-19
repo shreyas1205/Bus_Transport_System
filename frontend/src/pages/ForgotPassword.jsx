@@ -360,7 +360,7 @@ export default function ForgotPassword({
             fontSize: '13px'
           }}
         >
-          CAMPUSBUS
+          NAVIGUARD
         </p>
 
         <h1

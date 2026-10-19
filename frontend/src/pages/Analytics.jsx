@@ -68,7 +68,7 @@ export default function Analytics(){
 
       <section className="analytics-page-grid">
         <article className="panel analytics-main-card">
-          <div className="panel-head"><div><span className="panel-kicker">PASSENGER FLOW · LAST 7 DAYS</span><h3>Verified QR boarding</h3><p>Daily boarding activity recorded by CampusBus.</p></div><div className="analytics-highlight"><b>{data.boarding.uniqueToday}</b><small>unique today</small></div></div>
+          <div className="panel-head"><div><span className="panel-kicker">PASSENGER FLOW · LAST 7 DAYS</span><h3>Verified QR boarding</h3><p>Daily boarding activity recorded by NaviGuard.</p></div><div className="analytics-highlight"><b>{data.boarding.uniqueToday}</b><small>unique today</small></div></div>
           <Bars data={data.boarding.daily}/>
         </article>
 

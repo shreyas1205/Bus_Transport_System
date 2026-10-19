@@ -353,7 +353,9 @@ export default function Notifications() {
       marginTop: '12px',
       marginBottom: '10px',
       color: '#334155',
-      lineHeight: 1.6
+      lineHeight: 1.6,
+      whiteSpace: 'pre-line',
+      overflowWrap: 'anywhere'
     },
 
     time: {

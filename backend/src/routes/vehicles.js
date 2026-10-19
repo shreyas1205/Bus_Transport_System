@@ -1,8 +1,11 @@
 import express from 'express';
+import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
+import { detectGpsSuddenStop } from '../services/emergencyResponse.js';
 
 const router = express.Router();
+const vehicleStatuses = ['ACTIVE', 'INACTIVE', 'BREAKDOWN', 'MAINTENANCE'];
 
 /*
   SIMPLE GPS-BASED ACCIDENT DETECTION
@@ -15,16 +18,10 @@ const router = express.Router();
   - longitude
   - speed
 
-  A sudden large speed drop creates a POSSIBLE accident.
-  It does NOT immediately notify parents/emergency services.
+  A sudden large speed drop creates an accident candidate.
+  High-confidence events can automatically activate the emergency-response
+  workflow; lower-confidence events remain available for verification.
 */
-
-const MIN_SPEED_FOR_ACCIDENT_CHECK = 35;
-const MIN_SPEED_DROP = 30;
-const LOW_SPEED_AFTER_DROP = 8;
-const VERIFICATION_WINDOW_MS = 45 * 1000;
-const ACCIDENT_COOLDOWN_MS = 2 * 60 * 1000;
-
 
 // ======================================================
 // GET VEHICLES
@@ -33,9 +30,16 @@ const ACCIDENT_COOLDOWN_MS = 2 * 60 * 1000;
 router.get(
   '/',
   auth,
+  requireVerifiedParentTransport,
   async (req, res) => {
+    let where = {};
+    if (req.user.role === 'PARENT') {
+      const student = await prisma.user.findUnique({ where: { id: req.verifiedStudentId }, select: { assignedRoute: { select: { assignedBusId: true } } } });
+      where = { id: { in: student?.assignedRoute?.assignedBusId ? [student.assignedRoute.assignedBusId] : [] } };
+    }
     res.json(
       await prisma.vehicle.findMany({
+        where,
         orderBy: {
           registrationNo: 'asc'
         }
@@ -73,6 +77,8 @@ router.post(
           'Registration number, model and capacity are required'
       });
     }
+
+    if (!vehicleStatuses.includes(String(status).toUpperCase())) return res.status(400).json({ message: 'Invalid bus status.' });
 
     const normalizedBusNumber =
       busNumber?.toString().trim() || null;
@@ -158,6 +164,13 @@ router.patch(
         Number(req.body.odometerKm);
     }
 
+    if (data.status !== undefined) {
+      data.status = data.status.toUpperCase();
+      if (!vehicleStatuses.includes(data.status)) return res.status(400).json({ message: 'Invalid bus status.' });
+      const current = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+      if (!current) return res.status(404).json({ message: 'Bus not found.' });
+      if (data.status === 'ACTIVE' && (!(Number(data.capacity ?? current.capacity) > 0) || !String(data.registrationNo ?? current.registrationNo).trim() || !String(data.model ?? current.model).trim())) return res.status(409).json({ message: 'Bus needs a registration, model and positive capacity before reactivation.' });
+    }
     try {
       res.json(
         await prisma.vehicle.update({
@@ -175,14 +188,40 @@ router.patch(
         });
       }
 
+      if (error.code === 'P2025') return res.status(404).json({ message: 'Bus not found.' });
       throw error;
     }
   }
 );
 
+router.delete('/:id', auth, allow('ADMIN'), async (req, res) => {
+  try {
+    await prisma.$transaction(async tx => {
+      // Lock dependent tables too: boarding and route-change bus IDs have no foreign keys.
+      await tx.$executeRawUnsafe('LOCK TABLE "Vehicle", "Route", "VehicleLocation", "VehicleService", "Incident", "BoardingEvent", "RouteChange" IN SHARE ROW EXCLUSIVE MODE');
+      const id = req.params.id;
+      if (!await tx.vehicle.findUnique({ where: { id } })) throw Object.assign(new Error('Bus not found.'), { status: 404 });
+      const counts = await Promise.all([
+        tx.route.count({ where: { assignedBusId: id } }),
+        tx.vehicleLocation.count({ where: { vehicleId: id } }),
+        tx.vehicleService.count({ where: { vehicleId: id } }),
+        tx.incident.count({ where: { vehicleId: id } }),
+        tx.boardingEvent.count({ where: { vehicleId: id } }),
+        tx.routeChange.count({ where: { OR: [{ fromBusId: id }, { toBusId: id }] } }),
+      ]);
+      if (counts.some(Boolean)) throw Object.assign(new Error('Bus has operational or historical records. Deactivate it instead to preserve history.'), { status: 409 });
+      await tx.vehicle.delete({ where: { id } });
+    });
+    res.json({ message: 'Bus deleted.' });
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
+    if (['P2003', 'P2034'].includes(error.code)) return res.status(409).json({ message: 'Bus is in use. Deactivate it instead.' });
+    throw error;
+  }
+});
 
 // ======================================================
-// GPS LOCATION UPDATE + SIMPLE ACCIDENT DETECTION
+// GPS LOCATION UPDATE + ACCIDENT DETECTION
 // ======================================================
 
 router.post(
@@ -249,6 +288,9 @@ router.post(
       // GET PREVIOUS GPS RECORD BEFORE SAVING NEW ONE
       // --------------------------------------------------
 
+      const operationalBus = await prisma.vehicle.findUnique({ where: { id: req.params.id } });
+      if (!operationalBus || operationalBus.status !== 'ACTIVE') return res.status(409).json({ message: 'Only ACTIVE buses can perform trip operations.' });
+
       const previousLocation =
         await prisma.vehicleLocation.findFirst({
           where: {
@@ -299,276 +341,27 @@ router.post(
 
       req.app.get('io')?.emit(
         'vehicle:location',
-        {
-          vehicleId: vehicle.id,
-          latitude: vehicle.latitude,
-          longitude: vehicle.longitude,
-          speedKmph: vehicle.speedKmph
-        }
+        {}
       );
 
 
       // --------------------------------------------------
-      // SIMPLE GPS-BASED ACCIDENT CHECK
+      // GPS ACCIDENT DETECTION + AUTONOMOUS RESPONSE
       // --------------------------------------------------
 
-      let possibleAccident = false;
-      let incident = null;
-      let speedDrop = 0;
-
-      if (previousLocation) {
-        const previousSpeed =
-          Math.max(
-            0,
-            Number(
-              previousLocation.speedKmph
-            ) || 0
-          );
-
-        speedDrop =
-          Math.max(
-            0,
-            previousSpeed - currentSpeed
-          );
-
-        /*
-          Example:
-
-          Previous speed = 48 km/h
-          Current speed  = 4 km/h
-          Drop           = 44 km/h
-
-          This is suspicious enough to request
-          confirmation from the driver.
-        */
-
-        const suspiciousStop =
-          previousSpeed >=
-            MIN_SPEED_FOR_ACCIDENT_CHECK &&
-          speedDrop >= MIN_SPEED_DROP &&
-          currentSpeed <=
-            LOW_SPEED_AFTER_DROP;
-
-        if (suspiciousStop) {
-
-          // ----------------------------------------------
-          // PREVENT DUPLICATE ACCIDENT ALERTS
-          // ----------------------------------------------
-
-          const cooldownStart =
-            new Date(
-              Date.now() -
-              ACCIDENT_COOLDOWN_MS
-            );
-
-          const recentIncident =
-            await prisma.incident.findFirst({
-              where: {
-                vehicleId: vehicle.id,
-                type: 'CRASH',
-
-                createdAt: {
-                  gte: cooldownStart
-                },
-
-                verificationStatus: {
-                  in: [
-                    'PENDING',
-                    'CONFIRMED'
-                  ]
-                }
-              },
-
-              orderBy: {
-                createdAt: 'desc'
-              }
-            });
-
-
-          if (!recentIncident) {
-            possibleAccident = true;
-
-            /*
-              This is NOT ML confidence.
-
-              It is only a simple rule-based
-              severity score for the demo.
-            */
-
-            let confidence = 0.60;
-
-            if (speedDrop >= 40) {
-              confidence += 0.15;
-            }
-
-            if (currentSpeed <= 3) {
-              confidence += 0.10;
-            }
-
-            confidence =
-              Math.min(
-                0.95,
-                confidence
-              );
-
-
-            const verificationDeadline =
-              new Date(
-                Date.now() +
-                VERIFICATION_WINDOW_MS
-              );
-
-
-            incident =
-              await prisma.incident.create({
-                data: {
-                  driverId:
-                    req.user.role === 'DRIVER'
-                      ? req.user.id
-                      : null,
-
-                  vehicleId:
-                    vehicle.id,
-
-                  type:
-                    'CRASH',
-
-                  status:
-                    'OPEN',
-
-                  priority:
-                    confidence >= 0.8
-                      ? 10
-                      : 8,
-
-                  message:
-                    'Possible accident detected from an unusual GPS speed drop. Driver confirmation required.',
-
-                  latitude:
-                    lat,
-
-                  longitude:
-                    lng,
-
-                  aiConfidence:
-                    Number(
-                      confidence.toFixed(2)
-                    ),
-
-                  speedBefore:
-                    previousSpeed,
-
-                  speedAfter:
-                    currentSpeed,
-
-                  suddenStopDetected:
-                    true,
-
-                  impactDetected:
-                    false,
-
-                  rolloverDetected:
-                    false,
-
-                  detectionSignals: {
-                    source:
-                      'PHONE_GPS',
-
-                    speedDrop,
-
-                    previousSpeed,
-
-                    currentSpeed,
-
-                    algorithm:
-                      'GPS_SUDDEN_STOP_V1'
-                  },
-
-                  verificationStatus:
-                    'PENDING',
-
-                  verificationDeadline,
-
-                  emergencyDispatchStatus:
-                    'NOT_REQUIRED'
-                },
-
-                include: {
-                  vehicle: true,
-
-                  driver: {
-                    select: {
-                      id: true,
-                      name: true
-                    }
-                  }
-                }
-              });
-
-
-            // ----------------------------------------------
-            // POSSIBLE ACCIDENT ONLY
-            // ----------------------------------------------
-            //
-            // Parents and emergency services are NOT
-            // contacted here.
-            // ----------------------------------------------
-
-            req.app.get('io')?.emit(
-              'accident:possible',
-              incident
-            );
-
-
-            // Notify admins inside the app.
-
-            try {
-              const admins =
-                await prisma.user.findMany({
-                  where: {
-                    role: 'ADMIN'
-                  },
-
-                  select: {
-                    id: true
-                  }
-                });
-
-              if (admins.length) {
-                await prisma.notification.createMany({
-                  data:
-                    admins.map(
-                      admin => ({
-                        userId:
-                          admin.id,
-
-                        type:
-                          'GENERAL',
-
-                        title:
-                          'Possible Bus Accident',
-
-                        message:
-                          `Bus ${
-                            vehicle.busNumber ||
-                            vehicle.registrationNo
-                          } showed an unusual speed drop ` +
-                          `from ${previousSpeed} km/h to ` +
-                          `${currentSpeed} km/h. ` +
-                          `Waiting for driver confirmation.`
-                      })
-                    )
-                });
-              }
-            } catch (notificationError) {
-              console.error(
-                'Possible accident notification failed:',
-                notificationError
-              );
-            }
-          }
-        }
-      }
+      const accidentDetection =
+        await detectGpsSuddenStop({
+          vehicleId: vehicle.id,
+          driverId:
+            req.user.role === 'DRIVER'
+              ? req.user.id
+              : null,
+          latitude: lat,
+          longitude: lng,
+          currentSpeed,
+          previousLocation,
+          io: req.app.get('io')
+        });
 
 
       // --------------------------------------------------
@@ -578,31 +371,7 @@ router.post(
       res.json({
         vehicle,
 
-        accidentDetection: {
-          possibleAccident,
-
-          previousSpeed:
-            previousLocation
-              ? Number(
-                  previousLocation.speedKmph
-                ) || 0
-              : null,
-
-          currentSpeed,
-
-          speedDrop,
-
-          requiresVerification:
-            Boolean(incident),
-
-          verificationWindowSeconds:
-            incident
-              ? VERIFICATION_WINDOW_MS /
-                1000
-              : null,
-
-          incident
-        }
+        accidentDetection
       });
 
     } catch (error) {

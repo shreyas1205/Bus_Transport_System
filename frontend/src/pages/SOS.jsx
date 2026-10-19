@@ -218,8 +218,9 @@ export default function SOS() {
           <h2>SOS & Accident Center</h2>
 
           <p>
-            Monitor emergency incidents and verify possible bus
-            accidents before emergency escalation.
+            Monitor emergency incidents. High-confidence accidents can trigger
+            autonomous emergency escalation, while lower-confidence events remain
+            available for Driver/Admin verification.
           </p>
         </div>
       </div>
@@ -259,6 +260,144 @@ export default function SOS() {
         </section>
       )}
 
+      {user.role === 'ADMIN' &&
+        incidents
+          .filter(incident =>
+            incident.type === 'CRASH' &&
+            incident.verificationStatus === 'CONFIRMED'
+          )
+          .map(incident => {
+            const response = incident.detectionSignals?.autonomousEmergencyResponse;
+            const packet = response?.distressPacket;
+            const police = packet?.selectedEmergencyResources?.police;
+            const hospital = packet?.selectedEmergencyResources?.hospitals?.[0];
+            const affectedStudents = Array.isArray(packet?.passengers?.students)
+              ? packet.passengers.students.filter(Boolean) : [];
+            const mapUrl = packet?.location?.mapUrl || (
+              incident.latitude != null && incident.longitude != null
+                ? `https://maps.google.com/?q=${incident.latitude},${incident.longitude}` : null
+            );
+            const fallbackEmergencyPhone =
+              packet?.emergencyContacts?.fallbackEmergencyPhone || '112';
+
+            return (
+              <section className="panel" key={`emergency-${incident.id}`}>
+                <div className="panel-head">
+                  <div>
+                    <span className="eyebrow">EMERGENCY INFORMATION CARD</span>
+                    <h3>Confirmed accident · {busName(incident)}</h3>
+                    <p>Single-screen response information for the transport administrator.</p>
+                  </div>
+                  <span className="chip danger">PRIORITY P{incident.priority}</span>
+                </div>
+
+                <div className="table-wrap">
+                  <table>
+                    <tbody>
+                      <tr>
+                        <th>Bus</th>
+                        <td>{packet?.bus?.busNumber || incident.vehicle?.busNumber || 'N/A'} · {packet?.bus?.registrationNo || incident.vehicle?.registrationNo || 'N/A'}</td>
+                        <th>Route</th>
+                        <td>{packet?.route?.code || packet?.route?.name || 'N/A'}</td>
+                      </tr>
+                      <tr>
+                        <th>Driver</th>
+                        <td>{packet?.driver?.name || incident.driver?.name || 'N/A'}{(packet?.driver?.phone || incident.driver?.phone) ? ` · ${packet?.driver?.phone || incident.driver?.phone}` : ''}</td>
+                        <th>Detected</th>
+                        <td>{formatDate(incident.createdAt)}</td>
+                      </tr>
+                      <tr>
+                        <th>Current / final speed</th>
+                        <td>{incident.speedAfter ?? 'N/A'} km/h</td>
+                        <th>Students onboard</th>
+                        <td>{packet?.passengers?.onboardStudents ?? 'N/A'}</td>
+                      </tr>
+                      <tr>
+                        <th>GPS</th>
+                        <td>{incident.latitude ?? 'N/A'}, {incident.longitude ?? 'N/A'}</td>
+                        <th>Dispatch</th>
+                        <td>{response?.dispatch?.mode === 'DEMO' ? 'DEMO / SIMULATED ? ' : ''}{incident.emergencyDispatchStatus}{!response?.dispatch ? ' ? dispatch not completed' : ''}</td>
+                      </tr>
+                      <tr>
+                        <th>Police target</th>
+                        <td>{police?.name || 'Not selected'}{police?.phone ? ` · ${police.phone}` : ''}</td>
+                        <th>Hospital target</th>
+                        <td>{hospital?.name || 'Not selected'}{hospital?.phone ? ` · ${hospital.phone}` : ''}</td>
+                      </tr>
+                      <tr>
+                        <th>Campus security</th>
+                        <td>{packet?.campusContacts?.securityPhone || 'Not configured'}</td>
+                        <th>Transport emergency</th>
+                        <td>{packet?.campusContacts?.transportEmergencyPhone || 'Not configured'}</td>
+                      </tr>
+                      <tr>
+                        <th>Fallback emergency</th>
+                        <td>{fallbackEmergencyPhone}</td>
+                        <th>Affected students</th>
+                        <td>{packet?.passengers?.affectedStudents ?? affectedStudents.length}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {affectedStudents.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="panel-head" style={{ marginBottom: 10 }}>
+                      <div>
+                        <span className="eyebrow">STUDENT & PARENT CONTACTS</span>
+                        <h3 style={{ marginTop: 4 }}>Affected passenger contact list</h3>
+                      </div>
+                    </div>
+
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Student</th>
+                            <th>Status</th>
+                            <th>Pickup stop</th>
+                            <th>Parent / guardian</th>
+                            <th>Parent phone</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {affectedStudents.map(student => (
+                            <tr key={student.id}>
+                              <td>
+                                <strong>{student.name || 'Unknown student'}</strong>
+                                {student.institutionId ? (
+                                  <div className="muted">{student.institutionId}</div>
+                                ) : null}
+                              </td>
+                              <td>{student.status === 'ONBOARD' ? 'Onboard' : 'Assigned to route'}</td>
+                              <td>{student.pickupStop?.name || 'Not available'}</td>
+                              <td>{student.parent?.name || 'Not available'}</td>
+                              <td>
+                                {student.parent?.phone ? (
+                                  <a href={`tel:${student.parent.phone}`}>{student.parent.phone}</a>
+                                ) : (
+                                  'Not available'
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {mapUrl && (
+                  <div style={{ marginTop: 12 }}>
+                    <a className="secondary" href={mapUrl} target="_blank" rel="noreferrer">
+                      VIEW LIVE / LAST KNOWN LOCATION
+                    </a>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
       {pendingAccidents.length > 0 && (
         <section className="panel">
           <div className="panel-head">
@@ -266,8 +405,8 @@ export default function SOS() {
               <h3>Possible Accident Verification</h3>
 
               <p>
-               GPS speed data indicates a possible sudden stop.
-Driver confirmation is required before emergency escalation.
+               GPS/sensor data indicates a possible sudden stop. Lower-confidence events
+remain here for manual verification; high-confidence events can escalate automatically.
               </p>
             </div>
           </div>
@@ -501,6 +640,7 @@ Driver confirmation is required before emergency escalation.
                   <th>Driver</th>
                   <th>Status</th>
                   <th>Verification</th>
+                  <th>Dispatch</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -537,6 +677,12 @@ Driver confirmation is required before emergency escalation.
                     <td>
                       {incident.type === 'CRASH'
                         ? incident.verificationStatus
+                        : 'N/A'}
+                    </td>
+
+                    <td>
+                      {incident.type === 'CRASH'
+                        ? incident.emergencyDispatchStatus
                         : 'N/A'}
                     </td>
 

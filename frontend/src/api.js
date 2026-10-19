@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { readAuthToken } from './authStorage';
 
 export const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -11,7 +12,7 @@ export const api = axios.create({
 api.interceptors.request.use(
   config => {
     const token =
-      localStorage.getItem('campus_token');
+      readAuthToken();
 
     if (token) {
       config.headers.Authorization =

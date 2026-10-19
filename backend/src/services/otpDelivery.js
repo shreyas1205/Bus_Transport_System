@@ -35,7 +35,7 @@ export function normalisePhone(value) {
   let digits =
     trimmed.replace(/\D/g, '');
 
-  // The existing CampusBus database
+  // The existing NaviGuard database
   // uses Indian national numbers.
   if (
     !trimmed.startsWith('+') &&
@@ -59,7 +59,7 @@ export async function sendOtp({
   code,
 }) {
   const message =
-    'Your CampusBus password reset code is ' +
+    'Your NaviGuard password reset code is ' +
     code +
     '. It expires in 10 minutes. Do not share this code. Ignore this message if you did not request it.';
 
@@ -121,7 +121,7 @@ export async function sendOtp({
           destination,
 
         subject:
-          'CampusBus password reset code',
+          'NaviGuard password reset code',
 
         text:
           message,

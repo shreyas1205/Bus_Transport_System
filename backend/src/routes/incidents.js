@@ -1,10 +1,15 @@
 import express from 'express';
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
+import {
+  activateAutonomousEmergencyResponse,
+  isAutonomousDispatchEligible,
+  scheduleDriverNonResponseEscalation
+} from '../services/emergencyResponse.js';
 
 const router = express.Router();
 
-const VERIFICATION_WINDOW_MS = 15 * 1000;
+const VERIFICATION_WINDOW_MS = 30 * 1000;
 const ACCIDENT_THRESHOLD = 0.55;
 
 // ======================================================
@@ -257,7 +262,7 @@ async function notifyParentsForConfirmedAccident(incident) {
     // ======================================================
 
     /*
-      In the current CampusBus database ParentProfile.studentId
+      In the current NaviGuard database ParentProfile.studentId
       may contain either:
 
       - the student's User ID
@@ -321,7 +326,7 @@ async function notifyParentsForConfirmedAccident(incident) {
       data: relevantParents.map((parent) => ({
         userId: parent.id,
         type: 'GENERAL',
-        title: 'Confirmed Campus Bus Emergency',
+        title: 'Confirmed NaviGuard Emergency',
         message:
           `${busLabel} has reported a confirmed accident. ` +
           `Campus transport administration has been alerted.` +
@@ -540,7 +545,7 @@ router.post(
                 : 8,
 
             message:
-              'Possible bus accident detected. Driver confirmation required.',
+              'Possible bus accident detected. NaviGuard is evaluating autonomous emergency escalation.',
 
             latitude:
               numberOrNull(latitude),
@@ -589,47 +594,68 @@ router.post(
             verificationDeadline,
 
             emergencyDispatchStatus:
-              'NOT_REQUIRED'
+              'PENDING'
           },
           include: {
             vehicle: true,
             driver: {
               select: {
                 id: true,
-                name: true
+                name: true,
+                phone: true
               }
             }
           }
         });
 
-      /*
-        Admin may see a possible-accident warning.
+      const autonomousDispatchTriggered =
+        isAutonomousDispatchEligible(incident);
 
-        Parents / police / hospital / ambulance are NOT
-        contacted at this stage.
-      */
-      req.app.get('io')?.emit(
-        'accident:possible',
-        incident
-      );
+      if (autonomousDispatchTriggered) {
+        void activateAutonomousEmergencyResponse({
+          incidentId: incident.id,
+          io: req.app.get('io'),
+          activationReason: 'HIGH_CONFIDENCE_SENSOR_ACCIDENT'
+        }).catch(error => {
+          console.error(
+            'Autonomous sensor emergency response failed:',
+            error
+          );
+        });
+      } else {
+        req.app.get('io')?.emit(
+          'accident:possible',
+          incident
+        );
 
-      await notifyAdmins({
-        title:
-          'Possible Bus Accident',
+        await notifyAdmins({
+          title:
+            'Possible Bus Accident',
 
-        message:
-          `Possible accident detected with confidence ` +
-          `${Math.round(result.confidence * 100)}%. ` +
-          `Waiting for driver/admin verification.`
-      });
+          message:
+            `Possible accident detected with confidence ` +
+            `${Math.round(result.confidence * 100)}%. ` +
+            `Driver/admin verification is still required.`
+        });
+
+        scheduleDriverNonResponseEscalation({
+          incidentId: incident.id,
+          verificationDeadline,
+          io: req.app.get('io')
+        });
+      }
 
       return res.status(201).json({
         possibleAccident: true,
 
-        requiresVerification: true,
+        requiresVerification: !autonomousDispatchTriggered,
+
+        autonomousDispatchTriggered,
 
         verificationWindowSeconds:
-          VERIFICATION_WINDOW_MS / 1000,
+          autonomousDispatchTriggered
+            ? 0
+            : VERIFICATION_WINDOW_MS / 1000,
 
         incident
       });
@@ -874,61 +900,39 @@ router.patch(
             message:
               'Bus accident confirmed by driver.',
 
-            /*
-              Development mode.
-
-              Later this will be replaced with actual
-              ambulance/hospital/police provider integrations.
-            */
             emergencyDispatchStatus:
-              'MOCK_DISPATCHED',
-
-            emergencyDispatchAt:
-              confirmedAt
-          },
-
-          include: {
-            vehicle: true,
-
-            driver: {
-              select: {
-                id: true,
-                name: true,
-                phone: true
-              }
-            }
+              'PENDING'
           }
         });
 
-      const parentResult =
-        await notifyParentsForConfirmedAccident(
-          incident
-        );
-
-      await notifyAdmins({
-        title:
-          'Confirmed Bus Accident',
-
-        message:
-          'A bus accident was confirmed by the driver. Emergency workflow activated.'
-      });
-
-      req.app.get('io')?.emit(
-        'accident:confirmed',
-        incident
-      );
+      const responseResult =
+        await activateAutonomousEmergencyResponse({
+          incidentId: incident.id,
+          io: req.app.get('io'),
+          force: true,
+          activationReason: 'DRIVER_CONFIRMED_ACCIDENT'
+        });
 
       return res.json({
         message:
-          'Emergency confirmed. Mock emergency dispatch activated.',
+          responseResult.dispatch?.status === 'DISPATCHED'
+            ? 'Emergency confirmed and distress packet dispatched through the configured integration.'
+            : 'Emergency confirmed. Autonomous emergency response activated in demo mode.',
 
         onboardStudents:
-          parentResult.onboardStudents,
+          responseResult.onboardStudents || 0,
 
         parentsNotified:
-          parentResult.parentsNotified,
+          responseResult.parentsNotified || 0,
 
-        incident
+        emergencyResources:
+          responseResult.resources || null,
+
+        dispatch:
+          responseResult.dispatch || null,
+
+        incident:
+          responseResult.incident || incident
       });
     } catch (error) {
       console.error(
@@ -1097,54 +1101,38 @@ router.patch(
               'Bus accident confirmed by transport administrator.',
 
             emergencyDispatchStatus:
-              'MOCK_DISPATCHED',
-
-            emergencyDispatchAt:
-              confirmedAt
-          },
-
-          include: {
-            vehicle: true,
-
-            driver: {
-              select: {
-                id: true,
-                name: true,
-                phone: true
-              }
-            }
+              'PENDING'
           }
         });
 
-      const parentResult =
-        await notifyParentsForConfirmedAccident(
-          incident
-        );
-
-      await notifyAdmins({
-        title:
-          'Confirmed Bus Accident',
-
-        message:
-          'A bus accident has been confirmed by the transport administrator.'
-      });
-
-      req.app.get('io')?.emit(
-        'accident:confirmed',
-        incident
-      );
+      const responseResult =
+        await activateAutonomousEmergencyResponse({
+          incidentId: incident.id,
+          io: req.app.get('io'),
+          force: true,
+          activationReason: 'ADMIN_CONFIRMED_ACCIDENT'
+        });
 
       return res.json({
         message:
-          'Accident confirmed. Mock emergency dispatch activated.',
+          responseResult.dispatch?.status === 'DISPATCHED'
+            ? 'Accident confirmed and distress packet dispatched through the configured integration.'
+            : 'Accident confirmed. Autonomous emergency response activated in demo mode.',
 
         onboardStudents:
-          parentResult.onboardStudents,
+          responseResult.onboardStudents || 0,
 
         parentsNotified:
-          parentResult.parentsNotified,
+          responseResult.parentsNotified || 0,
 
-        incident
+        emergencyResources:
+          responseResult.resources || null,
+
+        dispatch:
+          responseResult.dispatch || null,
+
+        incident:
+          responseResult.incident || incident
       });
     } catch (error) {
       console.error(
@@ -1194,7 +1182,8 @@ router.get(
             driver: {
               select: {
                 id: true,
-                name: true
+                name: true,
+                phone: true
               }
             }
           },

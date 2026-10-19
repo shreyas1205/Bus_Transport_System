@@ -8,19 +8,21 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from 'react';
 
 import { useAuth } from '../auth';
 import { api } from '../api';
 import { io } from 'socket.io-client';
+import { flushOfflineQueue, getOfflineQueueCount } from '../offlineQueue';
 
 const nav = [
   [
     '/',
     'Dashboard',
     '\u25C6',
-    ['ADMIN']
+    ['ADMIN', 'PARENT']
   ],
 
   [
@@ -194,9 +196,15 @@ function ArrivalNotificationManager({
         'STUDENT',
         'STAFF',
         'PARENT'
-      ].includes(user.role) ||
-      !user.assignedRouteId ||
-      !user.pickupStopId
+      ].includes(user.role)
+    ) {
+      return undefined;
+    }
+
+    if (
+      user.role !== 'PARENT' &&
+      (!user.assignedRouteId ||
+        !user.pickupStopId)
     ) {
       return undefined;
     }
@@ -212,7 +220,37 @@ function ArrivalNotificationManager({
               '/routes'
             );
 
-          if (cancelled) {
+          let routeId =
+            user.assignedRouteId;
+
+          let pickupStopId =
+            user.pickupStopId;
+
+          // Parent accounts store the assignment on the
+          // linked student, not on the parent user itself.
+          if (user.role === 'PARENT') {
+            const liveResponse =
+              await api.get(
+                '/live-location'
+              );
+
+            routeId =
+              response.data?.[0]?.id ||
+              null;
+
+            pickupStopId =
+              liveResponse.data
+                ?.journey
+                ?.pickupStop
+                ?.id ||
+              null;
+          }
+
+          if (
+            cancelled ||
+            !routeId ||
+            !pickupStopId
+          ) {
             return;
           }
 
@@ -220,21 +258,21 @@ function ArrivalNotificationManager({
             response.data.find(
               item =>
                 item.id ===
-                user.assignedRouteId
+                routeId
             );
 
           const eta =
             route?.eta?.find(
               item =>
                 item.stopId ===
-                user.pickupStopId
+                pickupStopId
             );
 
           const stop =
             route?.stops?.find(
               item =>
                 item.stopId ===
-                user.pickupStopId
+                pickupStopId
             )?.stop;
 
           const mins =
@@ -261,7 +299,7 @@ function ArrivalNotificationManager({
               );
 
           const key =
-            `campusbus-arrival:${today}:${busId}:${user.pickupStopId}`;
+            `campusbus-arrival:${today}:${busId}:${pickupStopId}`;
 
           if (
             localStorage.getItem(
@@ -433,6 +471,315 @@ export default function Layout() {
     announceNotice,
     setAnnounceNotice
   ] = useState('');
+
+  const [
+    accidentAlert,
+    setAccidentAlert
+  ] = useState(null);
+
+  const [
+    accidentMuted,
+    setAccidentMuted
+  ] = useState(false);
+
+  const [
+    accidentBusy,
+    setAccidentBusy
+  ] = useState(false);
+
+  const [
+    accidentCountdown,
+    setAccidentCountdown
+  ] = useState(null);
+
+  const [
+    offlineQueueCount,
+    setOfflineQueueCount
+  ] = useState(() => getOfflineQueueCount(user?.id));
+
+  const [
+    online,
+    setOnline
+  ] = useState(() => navigator.onLine);
+
+  const confirmedAccidentIds = useRef(new Set());
+  const audioContextRef = useRef(null);
+  const alarmTimerRef = useRef(null);
+
+  useEffect(() => {
+    const refreshQueueCount = event => {
+      setOfflineQueueCount(getOfflineQueueCount(user?.id));
+    };
+
+    const onOffline = () => setOnline(false);
+    const onOnline = async () => {
+      setOnline(true);
+      await flushOfflineQueue(api, user?.id);
+      setOfflineQueueCount(getOfflineQueueCount(user?.id));
+    };
+
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('campusbus:offline-queue', refreshQueueCount);
+
+    if (navigator.onLine) {
+      flushOfflineQueue(api, user?.id).finally(() =>
+        setOfflineQueueCount(getOfflineQueueCount())
+      );
+    }
+
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('campusbus:offline-queue', refreshQueueCount);
+    };
+  }, [user?.id]);
+
+  const stopAccidentAlarm = useCallback(() => {
+    if (alarmTimerRef.current) {
+      clearInterval(alarmTimerRef.current);
+      alarmTimerRef.current = null;
+    }
+  }, []);
+
+  const playAlarmBurst = useCallback(() => {
+    if (accidentMuted) {
+      return;
+    }
+
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) {
+      return;
+    }
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextClass();
+    }
+
+    const context = audioContextRef.current;
+
+    if (context.state === 'suspended') {
+      context.resume().catch(() => {});
+    }
+
+    const beep = delay => {
+      const start = context.currentTime + delay;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = 'square';
+      oscillator.frequency.setValueAtTime(880, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.19);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(start);
+      oscillator.stop(start + 0.21);
+    };
+
+    beep(0);
+    beep(0.28);
+    beep(0.56);
+  }, [accidentMuted]);
+
+  const startAccidentAlarm = useCallback(() => {
+    stopAccidentAlarm();
+
+    if (accidentMuted) {
+      return;
+    }
+
+    playAlarmBurst();
+    alarmTimerRef.current = setInterval(
+      playAlarmBurst,
+      1700
+    );
+  }, [
+    accidentMuted,
+    playAlarmBurst,
+    stopAccidentAlarm
+  ]);
+
+  useEffect(() => {
+    if (user?.role !== 'DRIVER') {
+      return undefined;
+    }
+
+    const unlockAudio = () => {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+
+      if (!AudioContextClass) {
+        return;
+      }
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+
+      audioContextRef.current.resume().catch(() => {});
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'DRIVER') {
+      return undefined;
+    }
+
+    const socket = io(
+      import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000'
+    );
+
+    const belongsToDriver = incident =>
+      !incident?.driverId || incident.driverId === user.id;
+
+    const onPossible = incident => {
+      if (!belongsToDriver(incident)) {
+        return;
+      }
+
+      setAccidentMuted(false);
+      setAccidentAlert({
+        phase: 'POSSIBLE',
+        incident
+      });
+    };
+
+    const onConfirmed = incident => {
+      if (!belongsToDriver(incident)) {
+        return;
+      }
+
+      if (confirmedAccidentIds.current.has(incident.id)) return;
+      confirmedAccidentIds.current.add(incident.id);
+      setAccidentMuted(false);
+      setAccidentAlert({
+        phase: 'CONFIRMED',
+        incident
+      });
+    };
+
+    const onFalseAlarm = incident => {
+      setAccidentAlert(current =>
+        current?.incident?.id === incident?.id
+          ? null
+          : current
+      );
+    };
+
+    const onDriverUnresponsive = incident => {
+      if (!belongsToDriver(incident)) return;
+      setAccidentAlert({ phase: 'POSSIBLE', incident });
+    };
+
+    socket.on('accident:possible', onPossible);
+    socket.on('accident:confirmed', onConfirmed);
+    socket.on('accident:false-alarm', onFalseAlarm);
+    socket.on('accident:driver-unresponsive', onDriverUnresponsive);
+
+    return () => {
+      socket.off('accident:possible', onPossible);
+      socket.off('accident:confirmed', onConfirmed);
+      socket.off('accident:false-alarm', onFalseAlarm);
+      socket.off('accident:driver-unresponsive', onDriverUnresponsive);
+      socket.disconnect();
+      stopAccidentAlarm();
+    };
+  }, [
+    user?.id,
+    user?.role,
+    stopAccidentAlarm
+  ]);
+
+  useEffect(() => {
+    if (accidentAlert && !accidentMuted) {
+      startAccidentAlarm();
+    } else {
+      stopAccidentAlarm();
+    }
+
+    return stopAccidentAlarm;
+  }, [
+    accidentAlert,
+    accidentMuted,
+    startAccidentAlarm,
+    stopAccidentAlarm
+  ]);
+
+  useEffect(() => {
+    if (
+      accidentAlert?.phase !== 'POSSIBLE' ||
+      !accidentAlert?.incident?.verificationDeadline
+    ) {
+      setAccidentCountdown(null);
+      return undefined;
+    }
+
+    const updateCountdown = () => {
+      const seconds = Math.max(
+        0,
+        Math.ceil(
+          (new Date(accidentAlert.incident.verificationDeadline).getTime() - Date.now()) / 1000
+        )
+      );
+      setAccidentCountdown(seconds);
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 250);
+    return () => clearInterval(timer);
+  }, [
+    accidentAlert?.phase,
+    accidentAlert?.incident?.verificationDeadline
+  ]);
+
+  async function respondToAccident(response) {
+    const incidentId = accidentAlert?.incident?.id;
+
+    if (!incidentId || user?.role !== 'DRIVER') {
+      return;
+    }
+
+    try {
+      setAccidentBusy(true);
+
+      const result = await api.patch(
+        `/incidents/${incidentId}/driver-response`,
+        { response }
+      );
+
+      if (response === 'SAFE') {
+        setAccidentAlert(null);
+        stopAccidentAlarm();
+      } else if (result.data?.incident) {
+        setAccidentAlert({
+          phase: 'CONFIRMED',
+          incident: result.data.incident
+        });
+      }
+    } catch (error) {
+      console.error('ACCIDENT RESPONSE ERROR:', error);
+    } finally {
+      setAccidentBusy(false);
+    }
+  }
+
+  function acknowledgeAccidentAlert() {
+    setAccidentAlert(null);
+    stopAccidentAlarm();
+  }
 
   // ====================================================
   // NOTIFICATIONS
@@ -754,16 +1101,16 @@ export default function Layout() {
       >
         <div className="brand">
           <div className="brand-mark">
-            CB
+            NG
           </div>
 
           <div>
             <b>
-              CampusBus
+              NaviGuard
             </b>
 
             <span>
-              Transport Control
+              Smart Transport & Safety
             </span>
           </div>
         </div>
@@ -928,6 +1275,18 @@ export default function Layout() {
       {/* ============================================== */}
 
       <main className="main">
+
+        {accidentAlert && (
+          <div className="driver-accident-strip">
+            <span className="driver-accident-strip-pulse" />
+            <b>EMERGENCY ALERT</b>
+            <span>
+              {accidentAlert.phase === 'CONFIRMED'
+                ? 'Autonomous emergency response is active.'
+                : 'Possible accident detected. Immediate attention required.'}
+            </span>
+          </div>
+        )}
 
         {/* HEADER */}
 
@@ -1246,6 +1605,32 @@ export default function Layout() {
           </div>
         </header>
 
+        {!online && (
+          <div className="alert-banner">
+            OFFLINE MODE — Driver actions and GPS updates will be queued and synced when connectivity returns.
+          </div>
+        )}
+
+        {online && offlineQueueCount > 0 && (
+          <div className="alert-banner">
+            Syncing {offlineQueueCount} queued NaviGuard action{offlineQueueCount === 1 ? '' : 's'}...
+          </div>
+        )}
+
+        {accidentAlert && user?.role === 'DRIVER' && (
+          <div className={`accident-top-warning ${accidentAlert.phase === 'CONFIRMED' ? 'confirmed' : ''}`}>
+            <span className="accident-top-siren">🚨</span>
+            <span>
+              {accidentAlert.phase === 'CONFIRMED'
+                ? 'CRITICAL ACCIDENT — DISTRESS ACTIVE'
+                : 'POSSIBLE IMPACT — RESPOND NOW'}
+            </span>
+            {accidentAlert.phase === 'POSSIBLE' && accidentCountdown != null && (
+              <b>{accidentCountdown}s</b>
+            )}
+          </div>
+        )}
+
         <ArrivalNotificationManager
           user={user}
         />
@@ -1253,6 +1638,130 @@ export default function Layout() {
         <div className="page-content">
           <Outlet />
         </div>
+
+        {accidentAlert && (
+          <div className="accident-alarm-backdrop" role="alertdialog" aria-modal="true">
+            <section className={`accident-alarm-card ${accidentAlert.phase === 'CONFIRMED' ? 'confirmed' : 'possible'}`}>
+              <div className="accident-hazard-band" aria-hidden="true" />
+
+              <div className="accident-alarm-icon">!</div>
+
+              <span className="accident-alarm-kicker">
+                {accidentAlert.phase === 'CONFIRMED'
+                  ? 'CRITICAL CRASH ALERT'
+                  : 'IMPACT ALERT'}
+              </span>
+
+              <h2>
+                {accidentAlert.phase === 'CONFIRMED'
+                  ? 'ACCIDENT DETECTED'
+                  : 'POSSIBLE ACCIDENT'}
+              </h2>
+
+              <div className="accident-bus-chip">
+                BUS {accidentAlert.incident?.vehicle?.busNumber || accidentAlert.incident?.vehicle?.registrationNo || 'UNKNOWN'}
+              </div>
+
+              {accidentAlert.phase === 'POSSIBLE' && accidentCountdown != null && (
+                <div className="accident-countdown danger">
+                  <b>{accidentCountdown}</b>
+                  <span>RESPOND NOW</span>
+                </div>
+              )}
+
+              <div className="accident-alarm-metrics">
+                <div>
+                  <small>BEFORE</small>
+                  <b>{accidentAlert.incident?.speedBefore ?? 'N/A'} km/h</b>
+                </div>
+                <div>
+                  <small>AFTER</small>
+                  <b>{accidentAlert.incident?.speedAfter ?? 'N/A'} km/h</b>
+                </div>
+                <div>
+                  <small>CONFIDENCE</small>
+                  <b>
+                    {accidentAlert.incident?.aiConfidence == null
+                      ? 'N/A'
+                      : `${Math.round(Number(accidentAlert.incident.aiConfidence) * 100)}%`}
+                  </b>
+                </div>
+              </div>
+
+              {accidentAlert.phase === 'CONFIRMED' && (
+                <div className="accident-dispatch-grid">
+                  <div className="active">
+                    <span>🚨</span>
+                    <b>DISTRESS</b>
+                    <small>{accidentAlert.incident?.detectionSignals?.autonomousEmergencyResponse?.dispatch?.mode === 'WEBHOOK' ? 'INTEGRATION: SEE ADMIN' : 'DEMO / SIMULATED'}</small>
+                  </div>
+                  <div>
+                    <span>🚓</span>
+                    <b>POLICE</b>
+                    <small>SEE ADMIN DETAILS</small>
+                  </div>
+                  <div>
+                    <span>🏥</span>
+                    <b>HOSPITAL</b>
+                    <small>SEE ADMIN DETAILS</small>
+                  </div>
+                </div>
+              )}
+
+              <div className="accident-sound-row">
+                <button
+                  type="button"
+                  className="accident-control-button"
+                  onClick={() => setAccidentMuted(value => !value)}
+                >
+                  {accidentMuted ? 'UNMUTE SIREN' : 'MUTE SIREN'}
+                </button>
+
+                {accidentAlert.incident?.latitude != null &&
+                  accidentAlert.incident?.longitude != null && (
+                    <a
+                      className="accident-control-button accident-map-link"
+                      href={`https://maps.google.com/?q=${accidentAlert.incident.latitude},${accidentAlert.incident.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      OPEN GPS
+                    </a>
+                  )}
+              </div>
+
+              {accidentAlert.phase === 'POSSIBLE' && user?.role === 'DRIVER' ? (
+                <div className="accident-alarm-actions">
+                  <button
+                    type="button"
+                    className="accident-safe-button"
+                    disabled={accidentBusy}
+                    onClick={() => respondToAccident('SAFE')}
+                  >
+                    I'M SAFE
+                  </button>
+
+                  <button
+                    type="button"
+                    className="accident-emergency-button"
+                    disabled={accidentBusy}
+                    onClick={() => respondToAccident('EMERGENCY')}
+                  >
+                    CONFIRM EMERGENCY
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="accident-emergency-button accident-ack-button"
+                  onClick={acknowledgeAccidentAlert}
+                >
+                  ACKNOWLEDGE
+                </button>
+              )}
+            </section>
+          </div>
+        )}
 
         {/* ============================================== */}
         {/* ADMIN ANNOUNCEMENT MODAL */}

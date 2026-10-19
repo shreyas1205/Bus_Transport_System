@@ -8,7 +8,7 @@ export async function generateAndSendDailyReport(dateInput) {
   const report={date:date.toISOString().slice(0,10),boarded,rejected,total:events.length};
   if(process.env.SMTP_HOST && process.env.REPORT_EMAIL){
     const transporter=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:false,auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}});
-    await transporter.sendMail({from:process.env.SMTP_USER,to:process.env.REPORT_EMAIL,subject:`CampusBus Daily Attendance ${report.date}`,text:JSON.stringify(report,null,2)});
+    await transporter.sendMail({from:process.env.SMTP_USER,to:process.env.REPORT_EMAIL,subject:`NaviGuard Daily Attendance ${report.date}`,text:JSON.stringify(report,null,2)});
     report.emailSent=true;
   } else report.emailSent=false;
   return report;

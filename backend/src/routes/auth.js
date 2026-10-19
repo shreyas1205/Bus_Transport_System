@@ -25,7 +25,8 @@ router.post(
     try {
       const {
         email,
-        password
+        password,
+        rememberMe
       } = req.body || {};
 
       if (
@@ -140,7 +141,7 @@ router.post(
         secret,
 
         {
-          expiresIn: '8h',
+          expiresIn: rememberMe === true ? '7d' : '8h',
           algorithm: 'HS256'
         }
       );
@@ -309,9 +310,7 @@ router.patch(
             // ==========================
             const allowed = {
               name,
-              phone,
-              pickupStopId,
-              assignedRouteId
+              phone
             };
 
             const userData =

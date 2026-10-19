@@ -1,0 +1,33 @@
+NAVIGUARD MASTER2 - START HERE
+
+This folder already contains all features from the previous Autonomous Emergency ZIP plus the new Master2 feature pack.
+
+1) Replace/open this folder as your NaviGuard project.
+
+2) Backend database/client update (required for route safety + TemporaryDriverAssignment):
+   cd backend
+   npm install
+   npx prisma db push
+   npx prisma generate
+   npm run dev
+
+3) Frontend:
+   cd frontend
+   npm install
+   npm run dev
+
+4) Open:
+   http://localhost:5173
+
+5) Read:
+   MASTER2-FEATURES.md
+   MASTER2-TEST-CHECKLIST.md
+   TEMPORARY-DRIVER-ASSIGNMENT.md
+
+The full UI/UX redesign and scroll effects are intentionally NOT included yet. Those are reserved for the later UI pass.
+
+FINAL UI/UX PASS INCLUDED
+--------------------------
+This build also contains the Login eye-password button, smooth reveal/scroll effects,
+page entrance animations, hover/focus polish, sticky login header, and reduced-motion support.
+See UIUX-CHANGES.md.

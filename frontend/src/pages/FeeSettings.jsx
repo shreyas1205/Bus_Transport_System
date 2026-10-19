@@ -1,9 +1,13 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
+import {useLocation} from 'react-router-dom';
 import {api} from '../api';
 
 const money=v=>`₹${Number(v||0).toLocaleString('en-IN')}`;
 
 export default function FeeSettings(){
+  const location=useLocation();
+  const initialRouteId=new URLSearchParams(location.search).get('route')||'';
+  const [routeFilter,setRouteFilter]=useState(initialRouteId);
   const [stops,setStops]=useState([]),[summary,setSummary]=useState(null);
   const [loading,setLoading]=useState(true),[msg,setMsg]=useState(''),[error,setError]=useState(''),[saving,setSaving]=useState('');
   const [records,setRecords]=useState([]),[q,setQ]=useState(''),[editing,setEditing]=useState(null);
@@ -30,14 +34,18 @@ export default function FeeSettings(){
 
   if(loading)return <div className="loading-card">Loading pickup-point fees…</div>;
 
-  const configuredStops=stops.filter(s=>Number(s.amount)>0).length;
+  const routeOptions=useMemo(()=>{const m=new Map();for(const stop of stops){for(const route of stop.routes||[])m.set(route.id,route)}return [...m.values()].sort((a,b)=>String(a.code).localeCompare(String(b.code)));},[stops]);
+  const visibleStops=routeFilter?stops.filter(s=>(s.routes||[]).some(r=>r.id===routeFilter)):stops;
+  const selectedRoute=routeOptions.find(r=>r.id===routeFilter);
+  const configuredStops=visibleStops.filter(s=>Number(s.amount)>0).length;
   const pendingCount=records.filter(r=>r.status!=='PAID').length;
 
   return <>
   <style>{`
     .fs-page{display:grid;gap:16px}
     .fs-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
-    .fs-hero h2{margin:5px 0 4px;font-size:25px;color:#edf7ff}.fs-hero p{margin:0;color:#7f9bb0}
+.fs-hero h2{margin:5px 0 4px;font-size:25px;color:#edf7ff}.fs-hero p{margin:0;color:#7f9bb0}
+    .fs-hero-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}.fs-route-filter{min-width:190px;height:38px;padding:0 10px;border:1px solid rgba(91,161,216,.16);border-radius:9px;background:#071a2a;color:#cfe4f2}
     .fs-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
     .fs-stat{padding:16px 17px;border:1px solid rgba(91,161,216,.12);border-radius:13px;background:linear-gradient(145deg,#0a2134,#071a2a)}
     .fs-stat small{display:block;color:#66869e;font-size:8px;font-weight:900;letter-spacing:.12em}.fs-stat strong{display:block;margin-top:8px;color:#edf7ff;font-size:20px}
@@ -63,13 +71,13 @@ export default function FeeSettings(){
     .fs-payable{font-size:12px;color:#edf7ff;font-weight:900}.fs-status{display:inline-flex;width:max-content;padding:6px 9px;border-radius:999px;font-size:8px;font-weight:950}.fs-status.paid{background:rgba(44,205,145,.1);color:#59d5a6}.fs-status.pending{background:rgba(255,183,77,.1);color:#ffc266}
     .fs-actions{display:flex;gap:6px}.fs-empty{padding:35px;text-align:center;color:#6b899f}
     @media(max-width:1150px){.fs-summary{grid-template-columns:repeat(3,1fr)}.fs-stop-row,.fs-record{grid-template-columns:1fr 1fr}.fs-stop-row.header,.fs-record.header{display:none}.fs-actions{justify-content:flex-start}}
-    @media(max-width:700px){.fs-summary{grid-template-columns:1fr 1fr}.fs-hero,.fs-panel-head{align-items:flex-start;flex-direction:column}.fs-stop-row,.fs-record{grid-template-columns:1fr}.fs-searchbar{flex-direction:column}}
+    @media(max-width:700px){.fs-summary{grid-template-columns:1fr 1fr}.fs-hero,.fs-panel-head{align-items:flex-start;flex-direction:column}.fs-hero-actions{justify-content:flex-start;width:100%}.fs-route-filter{width:100%}.fs-stop-row,.fs-record{grid-template-columns:1fr}.fs-searchbar{flex-direction:column}}
   `}</style>
 
   <div className="fs-page">
     <div className="fs-hero">
       <div><span className="eyebrow">ADMIN · BILLING CONTROL</span><h2>Fee settings</h2><p>Configure transport pricing and manage student fee records from one place.</p></div>
-      <span className="fs-count">{configuredStops} of {stops.length} stops priced</span>
+      <div className="fs-hero-actions"><select className="fs-route-filter" value={routeFilter} onChange={e=>setRouteFilter(e.target.value)}><option value="">All routes</option>{routeOptions.map(r=><option key={r.id} value={r.id}>{r.code} · {r.name}</option>)}</select><span className="fs-count">{configuredStops} of {visibleStops.length} stops priced</span></div>
     </div>
 
     {msg&&<div className="success">{msg}</div>}{error&&<div className="error">{error}</div>}
@@ -84,12 +92,12 @@ export default function FeeSettings(){
 
     <section className="panel fs-panel">
       <div className="fs-panel-head">
-        <div><span className="eyebrow">PICKUP POINT PRICING</span><h3>Transport fee by stop</h3><p>Set the annual transport charge for each pickup point.</p></div>
+        <div><span className="eyebrow">PICKUP POINT PRICING</span><h3>{selectedRoute?`${selectedRoute.code} pickup-point fees`:'Transport fee by stop'}</h3><p>Map-created pickup points appear here automatically. Set the annual transport charge whenever pricing is finalized.</p></div>
         <button className="secondary" onClick={load}>↻ Refresh</button>
       </div>
       <div className="fs-stop-list">
         <div className="fs-stop-row header"><span>Pickup point</span><span>Location</span><span>Route</span><span>Members</span><span>Annual fee</span><span>Action</span></div>
-        {stops.map(stop=><div className="fs-stop-row" key={stop.id}>
+        {visibleStops.length===0?<div className="fs-empty">No pickup points found for this route.</div>:visibleStops.map(stop=><div className="fs-stop-row" key={stop.id}>
           <div className="fs-stop-name"><b>{stop.name}</b><small>{Number(stop.amount)>0?'Fee configured':'Fee not configured'}</small></div>
           <div>{stop.googleMapsUrl?<a href={stop.googleMapsUrl} target="_blank" rel="noreferrer">View map ↗</a>:<span className="fs-people">{stop.locationText||'—'}</span>}</div>
           <div>{stop.routes.length?<span className="fs-route-pill">{stop.routes.map(r=>r.code).join(', ')}</span>:'—'}</div>

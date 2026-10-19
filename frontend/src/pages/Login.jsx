@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import Reveal from '../components/Reveal';
 
 function BusIcon() {
   return (
@@ -98,6 +99,26 @@ function LeafIcon() {
   );
 }
 
+function EyeIcon({ open }) {
+  if (open) {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 3l18 18" />
+        <path d="M10.6 10.7a2 2 0 0 0 2.7 2.7" />
+        <path d="M9.9 4.3A10.6 10.6 0 0 1 12 4c5.5 0 9 6 9 6a16 16 0 0 1-2.3 3.1" />
+        <path d="M6.6 6.6C4.3 8.1 3 10 3 10s3.5 6 9 6a9.8 9.8 0 0 0 3-.5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </svg>
+  );
+}
+
 const roles = [
   {
     key: 'STUDENT',
@@ -126,7 +147,7 @@ const roles = [
   {
     key: 'ADMIN',
     title: 'Admin',
-    email: 'shreyass1269@gmail.com',
+    email: 'admin@campusbus.local',
     icon: <ShieldIcon />,
   },
 ];
@@ -135,7 +156,7 @@ const homeByRole = {
   ADMIN: '/',
   DRIVER: '/routes',
   STUDENT: '/live-location',
-  PARENT: '/live-location',
+  PARENT: '/',
   STAFF: '/fees',
 };
 
@@ -212,7 +233,7 @@ export default function Login() {
     setError('');
 
     try {
-      const user = await login(email.trim(), password);
+      const user = await login(email.trim(), password, remember);
 
       if (user.role !== role) {
         logout();
@@ -255,9 +276,9 @@ export default function Login() {
 
           <div>
             <strong>
-              Campus<span>Bus</span>
+              Navi<span>Guard</span>
             </strong>
-            <small>Transport Management System</small>
+            <small>Smart Campus Transport & Safety System</small>
           </div>
         </div>
 
@@ -271,7 +292,7 @@ export default function Login() {
 
         {/* LEFT */}
         <section className="ref-hero" id="home">
-          <div className="ref-hero-copy">
+          <Reveal className="ref-hero-copy" direction="up">
             <div className="ref-kicker">
               SAFE&nbsp;&nbsp;•&nbsp;&nbsp;SMART&nbsp;&nbsp;•&nbsp;&nbsp;CONNECTED
             </div>
@@ -286,13 +307,16 @@ export default function Login() {
               Real-time tracking, smart boarding, and a safer
               journey for every student. One connected campus.
             </p>
-          </div>
+          </Reveal>
 
           <div className="ref-features" id="features">
-            {features.map((feature) => (
-              <article
+            {features.map((feature, index) => (
+              <Reveal
+                as="article"
                 className={`ref-feature ${feature.tone}`}
                 key={feature.title}
+                delay={100 + index * 80}
+                direction="up"
               >
                 <div className="ref-feature-icon">
                   {feature.icon}
@@ -302,11 +326,11 @@ export default function Login() {
                 <p>{feature.text}</p>
 
                 <span className="ref-feature-arrow">→</span>
-              </article>
+              </Reveal>
             ))}
           </div>
 
-          <blockquote className="ref-quote">
+          <Reveal as="blockquote" className="ref-quote" delay={220} direction="left">
             <span />
             <div>
               <p>
@@ -315,21 +339,21 @@ export default function Login() {
                 a safer campus community.”
               </p>
 
-              <small>— CAMPUSBUS TRANSPORT</small>
+              <small>— NAVIGUARD TRANSPORT</small>
             </div>
-          </blockquote>
+          </Reveal>
         </section>
 
         {/* RIGHT */}
         <section className="ref-auth-wrap">
-          <div className="ref-auth-card">
+          <Reveal className="ref-auth-card" delay={120} direction="right">
 
             <div className="ref-auth-heading">
               <h2>
                 Welcome <span>Back</span> 👋
               </h2>
 
-              <p>Sign in to your CampusBus account</p>
+              <p>Sign in to your NaviGuard account</p>
             </div>
 
             <div className="ref-role-label">
@@ -409,8 +433,14 @@ export default function Login() {
                         ? 'Hide password'
                         : 'Show password'
                     }
+                    title={
+                      showPassword
+                        ? 'Hide password'
+                        : 'Show password'
+                    }
+                    aria-pressed={showPassword}
                   >
-                    {showPassword ? 'Hide' : 'Show'}
+                    <EyeIcon open={showPassword} />
                   </button>
                 </div>
               </label>
@@ -468,7 +498,7 @@ export default function Login() {
               <ShieldIcon />
               <span>Your data is secure and protected</span>
             </div>
-          </div>
+          </Reveal>
         </section>
 
       </main>
