@@ -34,7 +34,8 @@ function tripSnapshot(driverId) {
 
   return {
     ...session,
-    timeline: undefined
+    timeline: undefined,
+    lastGps: undefined
   };
 }
 
@@ -115,17 +116,20 @@ function routeDistanceM(point, stops) {
 
 function tracking(route, vehicle) {
   const now = Date.now();
-  const last = vehicle.locations?.[0]?.recordedAt || null;
+  const session = tripSessions.get(route?.assignedDriverId);
+  const active = Boolean(session?.active && session.routeId === route?.id && session.vehicleId === vehicle.id);
+  const sample = active ? session.lastGps : null;
+  const last = sample?.recordedAt || null;
   const ageSeconds = last
     ? Math.max(0, Math.round((now - new Date(last).getTime()) / 1000))
     : null;
-  const stale = ageSeconds == null || ageSeconds > STALE_SECONDS;
+  const stale = !active || ageSeconds == null || ageSeconds > STALE_SECONDS;
   const latitude = Number(vehicle.latitude);
   const longitude = Number(vehicle.longitude);
-  const hasGps = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const hasGps = sample && Number.isFinite(latitude) && Number.isFinite(longitude) && sample.latitude === latitude && sample.longitude === longitude;
   const speedKmph = Math.max(0, Number(vehicle.speedKmph || 0));
   const speedLimitKmph = Math.max(10, Number(route?.speedLimitKmph || 40));
-  const overspeed = speedKmph > speedLimitKmph;
+  const overspeed = !stale && hasGps && speedKmph > speedLimitKmph;
   const overspeedByKmph = overspeed
     ? Math.round(speedKmph - speedLimitKmph)
     : 0;
@@ -139,9 +143,10 @@ function tracking(route, vehicle) {
         Number.isFinite(stop.longitude)
     );
 
-  if (!hasGps || !stops.length) {
+  if (stale || !hasGps || !stops.length) {
     return {
-      stale,
+      active,
+      stale: stale || !hasGps,
       ageSeconds,
       staleThresholdSeconds: STALE_SECONDS,
       offRoute: false,
@@ -155,7 +160,7 @@ function tracking(route, vehicle) {
   }
 
   const point = { latitude, longitude };
-  const ranked = routeStops.map(routeStop => ({
+  const ranked = routeStops.filter(item => stops.includes(item.stop)).map(routeStop => ({
     ...routeStop,
     distanceM: haversineM(
       latitude,
@@ -180,18 +185,19 @@ function tracking(route, vehicle) {
     next = ranked[Math.min(index + 1, ranked.length - 1)];
   }
 
-  const etaSpeed = Math.max(speedKmph, 18);
-  const etaMinutes = next
+  const etaSpeed = speedKmph;
+  const etaMinutes = next && etaSpeed > 0
     ? Math.max(1, Math.round((next.distanceM / 1000 / etaSpeed) * 60))
     : null;
   const distanceFromRoute = routeDistanceM(point, stops);
 
   return {
+    active,
     stale,
     ageSeconds,
     staleThresholdSeconds: STALE_SECONDS,
     offRoute:
-      distanceFromRoute != null && distanceFromRoute > OFF_ROUTE_METERS,
+      distanceFromRoute != null && sample.accuracy <= 50 && distanceFromRoute > OFF_ROUTE_METERS + sample.accuracy,
     distanceFromRouteM:
       distanceFromRoute == null ? null : Math.round(distanceFromRoute),
     nextStop: next
@@ -757,7 +763,10 @@ router.get(
   allow('ADMIN', 'DRIVER', 'STUDENT', 'PARENT'),
   requireVerifiedParentTransport,
   async (req, res) => {
-    const ids = await viewerVehicleIds(req.user);
+    const viewer = req.user.role === 'PARENT' ? { id: req.verifiedStudentId, role: 'STUDENT' } : req.user;
+    const ids = await viewerVehicleIds(viewer);
+    const student = ['STUDENT', 'PARENT'].includes(req.user.role)
+      ? await prisma.user.findUnique({ where: { id: viewer.id }, select: { assignedRouteId: true } }) : null;
 
     if (!ids.length) {
       return res.json({
@@ -770,7 +779,7 @@ router.get(
       where: { id: { in: ids }, status: 'ACTIVE', routes: { some: { isActive: true } } },
       include: {
         routes: {
-          where: { isActive: true },
+          where: { isActive: true, ...(student ? { id: student.assignedRouteId || '' } : {}), ...(req.user.role === 'DRIVER' ? { assignedDriverId: req.user.id } : {}) },
           include: {
             stops: {
               include: { stop: true },
@@ -803,6 +812,7 @@ router.get(
 
     for (const vehicle of vehicles) {
       const route = vehicle.routes?.[0] || null;
+      if (!route) continue;
       const trackingInfo = tracking(route, vehicle);
 
       if (route && trackingInfo.offRoute) {
@@ -815,7 +825,7 @@ router.get(
         overspeedAlert(route, vehicle, trackingInfo, io).catch(() => {});
       }
 
-      if (trackingInfo.stale) {
+      if (trackingInfo.active && trackingInfo.stale) {
         staleGpsAlert(route, vehicle, trackingInfo, io).catch(() => {});
       }
 
@@ -826,11 +836,11 @@ router.get(
         model: vehicle.model,
         capacity: vehicle.capacity,
         status: vehicle.status,
-        latitude: vehicle.latitude,
-        longitude: vehicle.longitude,
+        latitude: trackingInfo.stale ? null : vehicle.latitude,
+        longitude: trackingInfo.stale ? null : vehicle.longitude,
         speedKmph: vehicle.speedKmph,
         updatedAt: vehicle.updatedAt,
-        lastLocationAt: vehicle.locations[0]?.recordedAt || null,
+        lastLocationAt: tripSessions.get(route.assignedDriverId)?.lastGps?.recordedAt || null,
         routes: route ? [route] : [],
         tracking: trackingInfo,
         timeline:
@@ -846,11 +856,7 @@ router.get(
       let studentId = req.user.id;
 
       if (req.user.role === 'PARENT') {
-        const parent = await prisma.parentProfile.findUnique({
-          where: { userId: req.user.id },
-          select: { studentId: true }
-        });
-        studentId = parent?.studentId || '';
+        studentId = req.verifiedStudentId;
       }
 
       if (studentId) {
@@ -891,7 +897,7 @@ router.get(
       vehicles: result,
       journey,
       trip:
-        req.user.role === 'DRIVER' ? tripSnapshot(req.user.id) : null
+        req.user.role === 'DRIVER' ? { ...tripSnapshot(req.user.id), active: result.some(vehicle => vehicle.tracking.active) } : null
     });
   }
 );
@@ -1062,7 +1068,7 @@ router.post('/update', auth, allow('DRIVER'), async (req, res) => {
   const longitude = Number(req.body.longitude);
   const speedKmph = Math.max(0, Number(req.body.speedKmph || 0));
 
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+  if (typeof req.body.latitude !== 'number' || typeof req.body.longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || (latitude === 0 && longitude === 0) || !Number.isFinite(speedKmph)) {
     return res.status(400).json({
       message: 'Valid latitude and longitude are required.'
     });
@@ -1092,7 +1098,16 @@ router.post('/update', auth, allow('DRIVER'), async (req, res) => {
     orderBy: { recordedAt: 'desc' }
   });
 
-  const recordedAt = new Date();
+  const captured = Date.parse(req.body.recordedAt);
+  const accuracy = req.body.accuracy;
+  if (!Number.isFinite(captured) || captured > Date.now() + 10000 || Date.now() - captured > STALE_SECONDS * 1000 || captured < Date.parse(session.startedAt) || (session.lastGps && captured <= Date.parse(session.lastGps.recordedAt))) {
+    return res.status(400).json({ message: 'A fresh GPS timestamp from the current trip is required.' });
+  }
+  if (typeof accuracy !== 'number' || !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 100) {
+    return res.status(400).json({ message: 'GPS accuracy is insufficient. Waiting for a reliable position.' });
+  }
+  if (!session.active || tripSessions.get(req.user.id) !== session) return res.status(409).json({ message: 'Trip has ended.' });
+  const recordedAt = new Date(captured);
   const [vehicle] = await prisma.$transaction([
     prisma.vehicle.update({
       where: { id: route.assignedBusId },
@@ -1109,6 +1124,7 @@ router.post('/update', auth, allow('DRIVER'), async (req, res) => {
     })
   ]);
 
+  session.lastGps = { latitude, longitude, accuracy, recordedAt: recordedAt.toISOString() };
   const trackingInfo = tracking(route, {
     ...vehicle,
     locations: [{ recordedAt }]

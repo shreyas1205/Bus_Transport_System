@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "vite --mode demo",
+    "check:demo": "node tests/demo-config.test.mjs",
+    "check:ui": "node tests/ui-regressions.test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

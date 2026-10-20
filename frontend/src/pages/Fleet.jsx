@@ -7,7 +7,11 @@ const initial={busNumber:'',registrationNo:'',model:'',capacity:'',odometerKm:'0
 export default function Fleet(){
   const {user}=useAuth();
   const [vehicles,setVehicles]=useState([]); const [form,setForm]=useState(initial); const [notice,setNotice]=useState(''); const [error,setError]=useState(''); const [busy,setBusy]=useState(false);
-  const load=()=>api.get('/vehicles').then(r=>setVehicles(r.data)).catch(e=>setError(e.response?.data?.message||'Could not load buses'));
+  const [routes,setRoutes]=useState([]);
+  const [assignmentsError,setAssignmentsError]=useState(false);
+  useEffect(()=>{api.get('/routes').then(r=>setRoutes(r.data)).catch(()=>setAssignmentsError(true));},[]);
+  const [loading,setLoading]=useState(true);
+  const load=()=>api.get('/vehicles').then(r=>setVehicles(r.data)).catch(e=>setError(e.response?.data?.message||'Could not load buses')).finally(()=>setLoading(false));
   useEffect(() => {
   load();
 }, []);
@@ -40,8 +44,8 @@ export default function Fleet(){
         <div className="full-row"><button className="primary" disabled={busy}>{busy?'Adding bus…':'＋ Add bus'}</button></div>
       </form>
     </section>
-    <section className="panel"><div className="panel-head"><div><h3>Registered buses</h3><p>{vehicles.length} buses available in the fleet.</p></div></div>
-      <div className="vehicle-grid">{vehicles.map(v=><div className="vehicle-card fleet-card" key={v.id}><div className="fleet-card-top"><span className="bus-badge">BUS {v.busNumber||'—'}</span><span className={v.status==='ACTIVE'?'chip good':'chip'}>{v.status}</span></div><b>{v.registrationNo}</b><span>{v.model} · {v.capacity} seats</span><small>{Number(v.odometerKm||0).toLocaleString('en-IN')} km</small><div className="button-row"><button className="secondary" disabled={busy} onClick={()=>manage(v,v.status==='INACTIVE'?'ACTIVE':'INACTIVE')}>{v.status==='INACTIVE'?'Reactivate':'Deactivate'}</button>{v.status!=='ACTIVE'&&v.status!=='INACTIVE'&&<button className="secondary" disabled={busy} onClick={()=>manage(v,'ACTIVE')}>Reactivate</button>}<button className="secondary" disabled={busy} onClick={()=>manage(v,'DELETE')}>Delete</button></div></div>)}{!vehicles.length&&<div className="empty">No buses added yet.</div>}</div>
+    <section className="panel"><div className="panel-head"><div><h3>Registered buses</h3><p>{loading?'Loading fleet...':`${vehicles.length} registered buses`}</p></div></div>
+      <div className="vehicle-grid">{vehicles.map(v=><div className="vehicle-card fleet-card" key={v.id}><div className="fleet-card-top"><span className="bus-badge">BUS {v.busNumber||'—'}</span><span className={v.status==='ACTIVE'?'chip good':'chip'}>{v.status}</span></div><b>{v.registrationNo}</b><span>{v.model} · {v.capacity} seats</span><small>{Number(v.odometerKm||0).toLocaleString('en-IN')} km</small><dl className="fleet-assignments"><dt>Assigned routes</dt><dd>{assignmentsError?'Unavailable':routes.filter(r=>r.assignedBusId===v.id).map(r=>r.code).join(', ')||'Unassigned'}</dd><dt>Assigned drivers</dt><dd>{assignmentsError?'Unavailable':[...new Set(routes.filter(r=>r.assignedBusId===v.id).map(r=>r.assignedDriver?.name).filter(Boolean))].join(', ')||'Unassigned'}</dd></dl><div className="button-row"><button className="secondary" disabled={busy} onClick={()=>manage(v,v.status==='INACTIVE'?'ACTIVE':'INACTIVE')}>{v.status==='INACTIVE'?'Reactivate':'Deactivate'}</button>{v.status!=='ACTIVE'&&v.status!=='INACTIVE'&&<button className="secondary" disabled={busy} onClick={()=>manage(v,'ACTIVE')}>Reactivate</button>}<button className="secondary" disabled={busy} onClick={()=>manage(v,'DELETE')}>Delete</button></div></div>)}{loading?<div className="loading-card" role="status">Loading buses...</div>:!vehicles.length&&!error&&<div className="empty">No buses added yet.</div>}</div>
     </section>
   </>
 }

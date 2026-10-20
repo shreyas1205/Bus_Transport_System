@@ -1,8 +1,10 @@
+import { isDemoMode } from '../demoMode.js';
 import nodemailer from 'nodemailer';
 
 let transporter;
 
 export function deliveryChannels() {
+  if (isDemoMode()) return { email: false, sms: false };
   return {
     email: Boolean(
       process.env.SMTP_HOST &&
@@ -58,6 +60,7 @@ export async function sendOtp({
   destination,
   code,
 }) {
+  if (isDemoMode()) throw new Error('DEMO_MODE_BLOCKED: External OTP delivery is disabled.');
   const message =
     'Your NaviGuard password reset code is ' +
     code +

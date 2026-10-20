@@ -110,7 +110,14 @@ try {
   assert.equal(unrelatedResponse.body.student,null);
   assert.equal(unrelatedResponse.body.route,null);
   const forbidden = response();
-  statusRoute.stack[1].handle({user:{id:'d1',role:'DRIVER'}},forbidden,()=>assert.fail('Unexpected authorization'));
+  const guards = statusRoute.stack.slice(1, -1);
+  async function runGuard(index = 0) {
+    assert.ok(index < guards.length, 'Driver must be denied before reaching the handler');
+    let next;
+    await guards[index].handle({user:{id:'d1',role:'DRIVER'}},forbidden,()=>{ next = runGuard(index + 1); });
+    await next;
+  }
+  await runGuard();
   assert.equal(forbidden.statusCode,403);
   console.log('PASS (mocked Prisma): linked boarding/transport access, unrelated parent isolation, query tampering, role restriction');
 } finally {

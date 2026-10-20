@@ -1,7 +1,9 @@
+import PageBoundary from './PageBoundary';
 import {
   NavLink,
   Outlet,
-  useNavigate
+  useNavigate,
+  useLocation
 } from 'react-router-dom';
 
 import {
@@ -424,6 +426,7 @@ export default function Layout() {
 
   const navigate =
     useNavigate();
+  const location = useLocation();
 
   const [
     query,
@@ -434,6 +437,30 @@ export default function Layout() {
     mobileNav,
     setMobileNav
   ] = useState(false);
+  const [compactNav, setCompactNav] = useState(() => window.matchMedia('(max-width: 980px)').matches);
+  const sidebarRef = useRef(null);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 980px)');
+    const update = () => setCompactNav(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    if (!mobileNav || !compactNav) return;
+    const previous = document.activeElement;
+    sidebarRef.current?.querySelector('a')?.focus();
+    const onKey = event => {
+      if (event.key === 'Escape') setMobileNav(false);
+      if (event.key !== 'Tab') return;
+      const items = sidebarRef.current?.querySelectorAll('a, button:not(:disabled)');
+      if (!items?.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); previous?.focus?.(); };
+  }, [mobileNav, compactNav]);
 
   const [
     notificationOpen,
@@ -1089,12 +1116,16 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
 
       {/* ============================================== */}
       {/* SIDEBAR */}
       {/* ============================================== */}
 
       <aside
+        ref={sidebarRef}
+        inert={compactNav && !mobileNav}
+        aria-hidden={compactNav && !mobileNav ? true : undefined}
         className={
           `sidebar ${mobileNav ? 'open' : ''}`
         }
@@ -1128,7 +1159,7 @@ export default function Layout() {
           MAIN MENU
         </div>
 
-        <nav>
+        <nav id="primary-navigation" aria-label="Main navigation">
           {allowedNav.map(
             item => {
               const isNotification =
@@ -1300,6 +1331,8 @@ export default function Layout() {
               )
             }
             aria-label="Toggle navigation"
+            aria-expanded={mobileNav}
+            aria-controls="primary-navigation"
           >
             {'\u2630'}
           </button>
@@ -1400,7 +1433,7 @@ export default function Layout() {
           <div className="header-actions">
             <div className="live-chip">
               <span />
-              Live
+              {online ? 'Online' : 'Offline'}
             </div>
 
             {user?.role ===
@@ -1635,8 +1668,8 @@ export default function Layout() {
           user={user}
         />
 
-        <div className="page-content">
-          <Outlet />
+        <div className="page-content" id="main-content" tabIndex={-1}>
+          <PageBoundary key={location.pathname}><Outlet /></PageBoundary>
         </div>
 
         {accidentAlert && (

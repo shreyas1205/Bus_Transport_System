@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import Reveal from '../components/Reveal';
+import SupportDialog from '../components/SupportDialog';
 
 function BusIcon() {
   return (
@@ -123,31 +124,26 @@ const roles = [
   {
     key: 'STUDENT',
     title: 'Student',
-    email: 'student1@campusbus.local',
     icon: <StudentIcon />,
   },
   {
     key: 'DRIVER',
     title: 'Driver',
-    email: 'driver1@campusbus.local',
     icon: <BusIcon />,
   },
   {
     key: 'STAFF',
     title: 'Staff',
-    email: '',
     icon: <StaffIcon />,
   },
   {
     key: 'PARENT',
     title: 'Parent',
-    email: 'parent1@campusbus.local',
     icon: <ParentIcon />,
   },
   {
     key: 'ADMIN',
     title: 'Admin',
-    email: 'admin@campusbus.local',
     icon: <ShieldIcon />,
   },
 ];
@@ -200,9 +196,10 @@ const features = [
 ];
 
 export default function Login() {
+  const [supportOpen, setSupportOpen] = useState(false);
   const [role, setRole] = useState('STUDENT');
-  const [email, setEmail] = useState('student1@campusbus.local');
-  const [password, setPassword] = useState('Pass@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
@@ -218,8 +215,8 @@ export default function Login() {
     if (busy) return;
 
     setRole(item.key);
-    setEmail(item.email);
-    setPassword(item.email ? 'Pass@123' : '');
+    setEmail('');
+    setPassword('');
     setShowPassword(false);
     setError('');
   };
@@ -267,6 +264,7 @@ export default function Login() {
     <div className="ref-login-page">
 
       <div className="ref-login-overlay" />
+      {supportOpen && <SupportDialog onClose={() => setSupportOpen(false)} />}
 
       <header className="ref-topbar">
         <div className="ref-logo">
@@ -284,7 +282,7 @@ export default function Login() {
 
         <div className="ref-support">
           <span>Need help?</span>
-          <span className="ref-support-text">Contact Support</span>
+          <button type="button" className="support-link" onClick={() => setSupportOpen(true)}>Contact support</button>
         </div>
       </header>
 
@@ -370,6 +368,7 @@ export default function Login() {
                       ? 'ref-role selected'
                       : 'ref-role'
                   }
+                  aria-pressed={role === item.key}
                   onClick={() => chooseRole(item)}
                   disabled={busy}
                 >
@@ -395,7 +394,7 @@ export default function Login() {
                     onChange={(event) =>
                       setEmail(event.target.value)
                     }
-                    placeholder="yourname@campusbus.local"
+                    placeholder="Your college email"
                     autoComplete="username"
                     disabled={busy}
                     required

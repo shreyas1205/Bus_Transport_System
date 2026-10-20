@@ -1,3 +1,4 @@
+import { isDemoMode } from '../demoMode.js';
 import { prisma } from '../prisma.js';
 
 function nowDate() {
@@ -19,6 +20,7 @@ async function notifyUsers(userIds, title, message) {
 }
 
 export async function syncTemporaryDriverAssignments(io = null) {
+  if (isDemoMode()) return;
   const now = nowDate();
 
   const due = await prisma.temporaryDriverAssignment.findMany({
@@ -156,6 +158,7 @@ export async function syncTemporaryDriverAssignments(io = null) {
 }
 
 export function startTemporaryDriverAssignmentJob(io = null) {
+  if (isDemoMode()) return;
   const run = async () => {
     try {
       await syncTemporaryDriverAssignments(io);

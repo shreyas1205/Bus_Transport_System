@@ -1,3 +1,4 @@
+import { blockDemoAction } from '../demoMode.js';
 import express from 'express';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
@@ -40,7 +41,7 @@ async function feeOwnerIdFor(user) {
   return parent?.studentId || null;
 }
 
-router.post('/create-order', auth, allow('STUDENT','STAFF','PARENT'), async (req,res)=>{
+router.post('/create-order', auth, allow('STUDENT','STAFF','PARENT'), blockDemoAction, async (req,res)=>{
   const ownerId = await feeOwnerIdFor(req.user);
   const fee = await prisma.fee.findUnique({ where:{ id:req.body.feeId } });
   if (!fee || fee.userId !== ownerId || fee.status === 'PAID') {
@@ -76,7 +77,7 @@ router.post('/create-order', auth, allow('STUDENT','STAFF','PARENT'), async (req
   res.json({demo:false,order,payment,keyId:process.env.RAZORPAY_KEY_ID});
 });
 
-router.post('/verify', auth, allow('STUDENT','STAFF','PARENT'), async(req,res)=>{
+router.post('/verify', auth, allow('STUDENT','STAFF','PARENT'), blockDemoAction, async(req,res)=>{
   const { paymentId, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body || {};
   const payment = await prisma.payment.findFirst({
     where:{ id:paymentId, userId:req.user.id },

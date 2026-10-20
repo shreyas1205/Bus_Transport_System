@@ -262,25 +262,8 @@ router.post(
       // --------------------------------------------------
 
       if (req.user.role === 'DRIVER') {
-        const assigned =
-          await prisma.route.findFirst({
-            where: {
-              assignedDriverId:
-                req.user.id,
+        return res.status(403).json({ message: 'Use active trip GPS sharing at /live-location/update.' });
 
-              assignedBusId:
-                req.params.id,
-
-              isActive: true
-            }
-          });
-
-        if (!assigned) {
-          return res.status(403).json({
-            message:
-              'This driver is not assigned to this bus'
-          });
-        }
       }
 
 

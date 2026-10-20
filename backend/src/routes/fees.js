@@ -1,3 +1,4 @@
+import { isDemoMode, blockDemoAction } from '../demoMode.js';
 import express from 'express';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
@@ -52,6 +53,7 @@ async function ensureBusPass(tx, studentId) {
 }
 
 async function sendAutomaticFeeReminders() {
+  if (isDemoMode()) return;
   const now = new Date();
   const horizon = new Date(now);
   horizon.setDate(horizon.getDate() + 5);
@@ -91,7 +93,7 @@ async function sendAutomaticFeeReminders() {
             studentId: fee.userId,
             type: 'GENERAL',
             title,
-            message: `₹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.academicYear} is pending. Due ${new Date(fee.dueDate).toLocaleDateString('en-IN')}.`,
+            message: `ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.academicYear} is pending. Due ${new Date(fee.dueDate).toLocaleDateString('en-IN')}.`,
           },
         });
       }
@@ -100,7 +102,7 @@ async function sendAutomaticFeeReminders() {
 }
 
 let reminderTimerStarted = false;
-if (!reminderTimerStarted) {
+if (!isDemoMode() && !reminderTimerStarted) {
   reminderTimerStarted = true;
   setTimeout(() => sendAutomaticFeeReminders().catch(() => {}), 30000);
   setInterval(() => sendAutomaticFeeReminders().catch(() => {}), 6 * 60 * 60 * 1000);
@@ -277,19 +279,19 @@ router.post('/admin/:feeId/refund', auth, allow('ADMIN'), async (req,res) => {
         studentId:fee.userId,
         type:'GENERAL',
         title:'Transport payment refunded',
-        message:`A refund of ₹${Number(payment.amount).toLocaleString('en-IN')} was recorded. Reason: ${reason}`,
+        message:`A refund of ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹${Number(payment.amount).toLocaleString('en-IN')} was recorded. Reason: ${reason}`,
       },
     });
   });
   res.json({message:'Refund recorded and bus pass moved to renewal pending.'});
 });
 
-router.post('/admin/run-reminders', auth, allow('ADMIN'), async (req,res) => {
+router.post('/admin/run-reminders', auth, allow('ADMIN'), blockDemoAction, async (req,res) => {
   await sendAutomaticFeeReminders();
   res.json({message:'Fee reminder check completed.'});
 });
 
-router.post('/:feeId/remind', auth, allow('ADMIN'), async (req,res) => {
+router.post('/:feeId/remind', auth, allow('ADMIN'), blockDemoAction, async (req,res) => {
   const fee = await prisma.fee.findUnique({ where:{ id:req.params.feeId }, include:{ user:true } });
   if (!fee || fee.status === 'PAID') return res.status(400).json({ message:'Pending fee not found.' });
 
@@ -304,13 +306,13 @@ router.post('/:feeId/remind', auth, allow('ADMIN'), async (req,res) => {
       studentId: fee.userId,
       type:'GENERAL',
       title:'Transport fee reminder',
-      message:`₹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.academicYear} is pending. Due ${new Date(fee.dueDate).toLocaleDateString('en-IN')}.`,
+      message:`ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.academicYear} is pending. Due ${new Date(fee.dueDate).toLocaleDateString('en-IN')}.`,
     })),
   });
   res.json({ message:`Reminder sent to ${recipients.length} account${recipients.length===1?'':'s'}.` });
 });
 
-router.post('/pay-demo', auth, allow('STUDENT','STAFF','PARENT'), async (req,res)=>{
+router.post('/pay-demo', auth, allow('STUDENT','STAFF','PARENT'), blockDemoAction, async (req,res)=>{
   const ownerId = await feeOwnerIdFor(req.user);
   const fee = await prisma.fee.findUnique({ where: { id: req.body.feeId } });
   if (!fee || fee.userId !== ownerId || fee.status === 'PAID') return res.status(400).json({message:'Invalid or already paid fee'});

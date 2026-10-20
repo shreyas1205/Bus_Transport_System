@@ -1,3 +1,4 @@
+import { isDemoMode } from '../demoMode.js';
 import express from 'express';
 import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
 import { prisma } from '../prisma.js';
@@ -31,6 +32,7 @@ function extractGoogleMapsCoordinates(url) {
 }
 
 async function geocodeLocation(query) {
+  if (isDemoMode()) throw new Error('DEMO_MODE_BLOCKED: External geocoding is disabled. Supply explicit latitude and longitude or a map URL containing coordinates.');
   const params = new URLSearchParams({ format: 'jsonv2', limit: '1', q: `${query}, Bengaluru, India` });
   const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
     headers: { 'User-Agent': 'NaviGuard/1.0 (local demo)' },
@@ -148,6 +150,7 @@ router.post('/', auth, allow('ADMIN'), async (req, res) => {
       let coords = null;
 
       if (
+        (!isDemoMode() || [s.latitude, s.longitude].every(v => v != null && String(v).trim() !== '')) &&
         Number.isFinite(directLatitude) && Number.isFinite(directLongitude) &&
         directLatitude >= -90 && directLatitude <= 90 &&
         directLongitude >= -180 && directLongitude <= 180

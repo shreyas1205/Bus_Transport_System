@@ -1,3 +1,4 @@
+import { isDemoMode } from '../demoMode.js';
 // ======================================================
 // NAVIGUARD COLLEGE DIRECTORY INTEGRATION
 // ======================================================
@@ -273,6 +274,7 @@ async function findApiRecord(
       `Bearer ${apiKey}`;
   }
 
+  if (isDemoMode()) throw new Error('DEMO_MODE_BLOCKED: External college directory lookup is disabled.');
   const response =
     await fetch(
       `${baseUrl}/students-or-staff/${encodeURIComponent(

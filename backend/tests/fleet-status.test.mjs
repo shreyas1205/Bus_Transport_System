@@ -9,7 +9,7 @@ for(const model of ['vehicleLocation','vehicleService','incident','boardingEvent
 db.$transaction=fn=>fn(db);
 const allowContext=vm.createContext({});vm.runInContext(fs.readFileSync('src/middleware.js','utf8').split('export function allow')[1].replace(/^/, 'function allow'),allowContext);
 function load(file){
- const handlers=new Map();const c=vm.createContext({console,process:{env:{}},prisma:db,express:{Router:()=>Object.fromEntries(['get','post','patch','delete'].map(m=>[m,(p,...h)=>handlers.set(m+' '+p,h)]))},auth:(q,s,n)=>q.user?n():s.status(401).json({}),allow:allowContext.allow,requireVerifiedParentTransport:(q,s,n)=>n(),syncTemporaryDriverAssignments:async()=>{},calculateEtaMinutes:()=>0});
+ const handlers=new Map();const c=vm.createContext({isDemoMode:()=>false,console,process:{env:{}},prisma:db,express:{Router:()=>Object.fromEntries(['get','post','patch','delete'].map(m=>[m,(p,...h)=>handlers.set(m+' '+p,h)]))},auth:(q,s,n)=>q.user?n():s.status(401).json({}),allow:allowContext.allow,requireVerifiedParentTransport:(q,s,n)=>n(),syncTemporaryDriverAssignments:async()=>{},calculateEtaMinutes:()=>0});
  vm.runInContext(fs.readFileSync(file,'utf8').replace(/^import .*;\r?\n/gm,'').replace('export default router;',''),c);
  return async(method,path,body={},role='ADMIN')=>{const req={body,params:{id:'bus'},user:role?{role,id:'driver'}:null,app:{get:()=>null}};const res={code:200,status(n){this.code=n;return this},json(data){this.data=data;return this}};let i=0;const chain=handlers.get(method+' '+path);async function next(){let following;await chain[i++]?.(req,res,()=>following=next());await following;}await next();return res;};
 }

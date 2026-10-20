@@ -1,3 +1,4 @@
+import { isDemoMode } from '../demoMode.js';
 import { prisma } from '../prisma.js';
 
 const DEFAULT_RADIUS_METERS = Number(
@@ -163,6 +164,7 @@ function hospitalPriority(resource) {
 }
 
 async function queryOverpass(latitude, longitude, radiusMeters) {
+  if (isDemoMode()) return [];
   const query = `
 [out:json][timeout:8];
 (
@@ -210,6 +212,7 @@ export async function findNearbyEmergencyResources(
     radiusMeters = DEFAULT_RADIUS_METERS
   } = {}
 ) {
+  if (isDemoMode()) return { status: 'DEMO_MODE_BLOCKED', provider: 'LOCAL_DEMO', radiusMeters, police: [], hospitals: [] };
   const lat = toNumber(latitude);
   const lng = toNumber(longitude);
 
@@ -716,6 +719,7 @@ export function scheduleDriverNonResponseEscalation({
 }
 
 export async function recoverPendingAccidentCountdowns(io) {
+  if (isDemoMode()) return;
   try {
     const pending = await prisma.incident.findMany({
       where: {
@@ -817,6 +821,7 @@ function buildDistressPacket({
 }
 
 async function dispatchPacket(packet, resources) {
+  if (isDemoMode()) return { mode: 'DEMO', status: 'MOCK_DISPATCHED', code: 'DEMO_MODE_BLOCKED', realEmergencyServiceContacted: false, note: 'External emergency dispatch is disabled in NaviGuard demo mode. Local incident handling remains active.' };
   if (DISPATCH_MODE !== 'webhook') {
     const hasTargets =
       Boolean(resources.police?.[0]) ||

@@ -1,3 +1,4 @@
+import MapViewport from '../components/MapViewport';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -12,8 +13,7 @@ import {
   Marker,
   Popup,
   Polyline,
-  CircleMarker,
-  useMap
+  CircleMarker
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -41,27 +41,9 @@ const fmtTime = value =>
     : '—';
 
 function Fit({ vehicles }) {
-  const map = useMap();
-
-  useEffect(() => {
-    const resize = () => map.invalidateSize({ pan: false });
-    resize();
-    const timer = setTimeout(resize, 180);
-    const points = vehicles
-      .filter(
-        vehicle =>
-          Number.isFinite(vehicle.latitude) &&
-          Number.isFinite(vehicle.longitude)
-      )
-      .map(vehicle => [vehicle.latitude, vehicle.longitude]);
-
-    if (points.length === 1) map.setView(points[0], 15);
-    else if (points.length > 1) map.fitBounds(points, { padding: [30, 30] });
-
-    return () => clearTimeout(timer);
-  }, [vehicles, map]);
-
-  return null;
+  const points = vehicles.filter(v => Number.isFinite(v.latitude) && Number.isFinite(v.longitude)).map(v => [v.latitude, v.longitude]);
+  const viewKey = vehicles.map(v => v.id).sort().join('|');
+  return <MapViewport viewKey={viewKey} points={points} />;
 }
 
 export default function LiveLocation() {
@@ -73,66 +55,116 @@ export default function LiveLocation() {
   const [journey, setJourney] = useState(null);
   const [trip, setTrip] = useState({ active: false });
   const [notice, setNotice] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [gpsError, setGpsError] = useState('');
   const [reportedDeviationVehicleId, setReportedDeviationVehicleId] = useState(null);
   const [reportingDeviation, setReportingDeviation] = useState(false);
   const watchRef = useRef(null);
+  const refreshRef = useRef(() => Promise.resolve());
 
-  async function load() {
-    try {
-      setLoading(true);
-      const response = await api.get('/live-location');
-      setVehicles(response.data.vehicles || []);
-      setJourney(response.data.journey || null);
-      if (isDriver && response.data.trip) setTrip(response.data.trip);
-      setNotice(response.data.message || '');
-    } catch (error) {
-      setVehicles([]);
-      setJourney(null);
-      setNotice(
-        error.response?.data?.message || 'Could not load live tracking.'
-      );
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const timer = setInterval(() => setVehicles(current => current.map(vehicle => {
+      const track = vehicle.tracking || {};
+      const age = (Date.now() - Date.parse(vehicle.lastLocationAt || '')) / 1000;
+      if (!track.stale && (!Number.isFinite(age) || age > track.staleThresholdSeconds)) {
+        return { ...vehicle, latitude: null, longitude: null, tracking: { ...track, stale: true, offRoute: false, overspeed: false, etaMinutes: null } };
+      }
+      return vehicle;
+    })), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  function load() {
+    return refreshRef.current();
   }
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 30000);
+    let disposed = false;
+    let pending = false;
+    let inFlight = null;
+    const controller = new AbortController();
+
+    async function drainRefreshes() {
+      do {
+        pending = false;
+        try {
+          const response = await api.get('/live-location', { signal: controller.signal });
+          if (disposed) return;
+          setVehicles(response.data.vehicles || []);
+          setJourney(response.data.journey || null);
+          if (isDriver && response.data.trip) setTrip(response.data.trip);
+          setNotice(response.data.message || '');
+        } catch (error) {
+          if (disposed) return;
+          // Keep the mounted map for transient failures; revoke data on access denial.
+          if ([401, 403].includes(error.response?.status)) {
+            setVehicles([]);
+            setJourney(null);
+          }
+          setNotice(
+            error.response?.data?.message || 'Could not load live tracking.'
+          );
+        } finally {
+          // Only the initial request gates the tracking page and map.
+          if (!disposed) setLoading(false);
+        }
+      } while (pending && !disposed);
+    }
+
+    function refresh() {
+      if (disposed) return Promise.resolve();
+      // Coalesce bursts into one trailing refresh without overlapping requests.
+      pending = true;
+      if (!inFlight) {
+        setRefreshing(true);
+        inFlight = drainRefreshes().finally(() => { inFlight = null; if (!disposed) setRefreshing(false); });
+      }
+      return inFlight;
+    }
+
+    refreshRef.current = refresh;
+    refresh();
+    const timer = setInterval(refresh, 30000);
     const socket = io(
       import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000'
     );
 
-    socket.on('vehicle:location', load);
+    socket.on('vehicle:location', refresh);
 
-    socket.on('trip:status', load);
-    socket.on('route:deviation', load);
-    socket.on('route:deviation:inevitable', load);
-    socket.on('vehicle:overspeed', load);
-    socket.on('gps:stale', load);
-    socket.on('boarding:missed', load);
+    socket.on('trip:status', refresh);
+    socket.on('route:deviation', refresh);
+    socket.on('route:deviation:inevitable', refresh);
+    socket.on('vehicle:overspeed', refresh);
+    socket.on('gps:stale', refresh);
+    socket.on('boarding:missed', refresh);
 
     return () => {
+      disposed = true;
+      controller.abort();
       clearInterval(timer);
       socket.disconnect();
       if (watchRef.current != null) {
         navigator.geolocation?.clearWatch(watchRef.current);
       }
     };
-  }, []);
+  }, [isDriver, user?.id]);
 
   useEffect(() => {
-    if (!isDriver || !trip.active || !navigator.geolocation) return undefined;
+    if (!isDriver || !trip.active) return undefined;
+    if (!navigator.geolocation) { setGpsError('GPS is unavailable. Use a supported browser with HTTPS and location permission.'); return undefined; }
 
     setGpsError('');
+    let cancelled = false;
 
     watchRef.current = navigator.geolocation.watchPosition(
       async position => {
+        if (cancelled) return;
         const payload = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
+          recordedAt: new Date(position.timestamp).toISOString(),
+          accuracy: position.coords.accuracy,
           speedKmph:
             position.coords.speed == null
               ? null
@@ -164,7 +196,8 @@ export default function LiveLocation() {
               data: payload,
               kind: 'GPS',
               description: 'Driver GPS update',
-              dedupeKey: `gps:${user.id}`
+              dedupeKey: `gps:${user.id}`,
+              ownerUserId: user.id
             });
             setGpsError('Network unavailable: GPS queued for automatic sync.');
           } else {
@@ -172,7 +205,7 @@ export default function LiveLocation() {
           }
         }
       },
-      error => setGpsError(error.message),
+      error => setGpsError(error.code === 1 ? 'Location permission denied. Allow location access to share GPS.' : error.message),
       {
         enableHighAccuracy: true,
         maximumAge: 5000,
@@ -181,6 +214,7 @@ export default function LiveLocation() {
     );
 
     return () => {
+      cancelled = true;
       if (watchRef.current != null) {
         navigator.geolocation.clearWatch(watchRef.current);
         watchRef.current = null;
@@ -394,9 +428,9 @@ export default function LiveLocation() {
           </p>
         </div>
 
-        <button className="secondary live-refresh-btn" onClick={load} title="Refresh live tracking">
+        <button className="secondary live-refresh-btn" disabled={refreshing} aria-busy={refreshing} onClick={load} title={refreshing ? "Refreshing live tracking" : "Refresh live tracking"}>
           <span className="live-refresh-icon" aria-hidden="true">↻</span>
-          <span>Refresh</span>
+          <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
         </button>
       </div>
 
@@ -434,7 +468,7 @@ export default function LiveLocation() {
             <h3>{trip.active ? 'Trip in progress' : 'Ready to start'}</h3>
             <p>
               {trip.active
-                ? `Started ${fmtTime(trip.startedAt)} · GPS sharing active${trip.offline ? ' · OFFLINE QUEUE' : ''}`
+                ? `Started ${fmtTime(trip.startedAt)} · ${gpsError ? 'GPS unavailable' : vehicles[0]?.tracking?.stale !== false ? 'Waiting for GPS' : 'GPS sharing active'}${trip.offline ? ' · OFFLINE QUEUE' : ''}`
                 : 'Start the trip to begin secure browser GPS sharing.'}
             </p>
           </div>
@@ -495,8 +529,8 @@ export default function LiveLocation() {
                         Bus {vehicle.busNumber || '—'} <small>{vehicle.registrationNo}</small>
                       </h3>
                     </div>
-                    <span className={track.stale ? 'chip warn' : 'chip good'}>
-                      {track.stale ? 'GPS STALE' : 'LIVE'}
+                    <span className={!track.active || !vehicle.lastLocationAt || track.stale ? 'chip warn' : 'chip good'}>
+                      {!track.active ? 'TRIP INACTIVE' : !vehicle.lastLocationAt ? 'GPS UNAVAILABLE' : track.stale ? 'GPS STALE' : 'GPS ACTIVE'}
                     </span>
                   </div>
 
@@ -516,7 +550,7 @@ export default function LiveLocation() {
                     <div><small>SPEED</small><b>{vehicle.speedKmph == null ? '—' : `${Math.round(vehicle.speedKmph)} km/h`}</b></div>
                     <div><small>LIMIT</small><b>{track.speedLimitKmph ? `${track.speedLimitKmph} km/h` : '—'}</b></div>
                     <div><small>NEXT STOP</small><b>{track.nextStop?.name || '—'}</b></div>
-                    <div><small>ETA</small><b>{track.etaMinutes ? `${track.etaMinutes} min` : '—'}</b></div>
+                    <div><small>ETA</small><b>{track.etaMinutes != null ? `${track.etaMinutes} min (estimated)` : 'ETA unavailable'}</b></div>
                     <div><small>LAST GPS</small><b>{fmtAge(track.ageSeconds)}</b></div>
                   </div>
 
@@ -597,7 +631,7 @@ export default function LiveLocation() {
                     <b>Bus {vehicle.busNumber || '—'}</b><br />
                     {vehicle.routes?.[0]?.name || 'No route'}<br />
                     Next: {vehicle.tracking?.nextStop?.name || '—'}<br />
-                    ETA: {vehicle.tracking?.etaMinutes ? `${vehicle.tracking.etaMinutes} min` : '—'}<br />
+                    ETA: {vehicle.tracking?.etaMinutes != null ? `${vehicle.tracking.etaMinutes} min (estimated)` : 'ETA unavailable'}<br />
                     {vehicle.tracking?.stale ? 'GPS stale' : vehicle.tracking?.offRoute ? '⚠ Route caution' : '✓ On route'}<br />
                     {vehicle.tracking?.overspeed ? `⚠ Overspeed (${Math.round(vehicle.speedKmph || 0)} km/h)` : ''}
                   </Popup>

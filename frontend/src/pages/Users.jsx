@@ -1,3 +1,4 @@
+import './Users.css';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
@@ -1703,16 +1704,7 @@ export default function Users() {
           USERS DIRECTORY
       ====================================== */}
 
-      <style>{`
-        .users-directory-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px}
-        .users-directory-head h3{margin:0 0 5px;color:#edf7ff;font-size:18px}.users-directory-head p{margin:0;color:#708ca4;font-size:12px}
-        .users-search{width:min(360px,100%)}
-        .users-main-table{min-width:900px}.users-main-table th{font-size:10px!important}.users-main-table td{font-size:12px!important;padding-top:14px!important;padding-bottom:14px!important}
-        .user-identity{display:flex;align-items:center;gap:11px;min-width:230px}.user-avatar{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#168df5,#1264d3);display:grid;place-items:center;color:#fff;font-weight:900;flex:none}.user-identity b{display:block;color:#eaf6ff;font-size:12px}.user-identity small{display:block;margin-top:3px;color:#66839b;font-size:10px}
-        .role-pill{display:inline-flex;padding:5px 9px;border-radius:999px;background:#0b2940;border:1px solid #164365;color:#8ecbfa;font-size:9px;font-weight:900;letter-spacing:.04em}.role-pill.driver{background:rgba(37,140,255,.12);color:#68bdff}.role-pill.student{background:rgba(46,205,148,.09);color:#6addb2}.role-pill.parent{background:rgba(174,120,255,.1);color:#c3a4ff}.role-pill.staff{background:rgba(255,184,77,.09);color:#ffc86f}
-        .driver-detail-btn{white-space:nowrap}.driver-modal-backdrop{position:fixed;inset:0;background:rgba(0,8,17,.74);backdrop-filter:blur(7px);z-index:1000;display:grid;place-items:center;padding:24px}.driver-modal{width:min(820px,96vw);max-height:90vh;overflow:auto;background:#081b2c;border:1px solid rgba(101,174,231,.18);border-radius:18px;box-shadow:0 28px 80px rgba(0,0,0,.45);padding:22px}.driver-modal-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding-bottom:17px;border-bottom:1px solid rgba(105,165,215,.1)}.driver-modal-head h3{margin:3px 0 5px;color:#edf7ff;font-size:20px}.driver-modal-head p{margin:0;color:#708ca4;font-size:11px}.driver-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.driver-detail-card{padding:14px;border:1px solid rgba(105,165,215,.1);border-radius:12px;background:#061725}.driver-detail-card small{display:block;color:#67859d;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.07em}.driver-detail-card b{display:block;margin-top:6px;color:#e6f3fd;font-size:12px}.driver-license-photo{width:100%;height:230px;object-fit:contain;background:#fff;border-radius:12px;margin-top:8px}.driver-review{grid-column:1/-1;padding:16px;border:1px solid rgba(105,165,215,.1);border-radius:12px;background:#071827}.driver-review-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.driver-review-actions{display:flex;gap:8px;flex-wrap:wrap}.driver-phone-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
-        @media(max-width:760px){.users-directory-head{align-items:stretch;flex-direction:column}.users-search{width:100%}.driver-modal-grid{grid-template-columns:1fr}.driver-review-row,.driver-phone-row{grid-template-columns:1fr}.driver-review{grid-column:auto}}
-      `}</style>
+
 
       <section className="panel">
         <div className="users-directory-head">

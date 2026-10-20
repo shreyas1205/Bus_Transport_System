@@ -30,6 +30,7 @@ import Complaints from './pages/Complaints';
 import Notifications from './pages/Notifications';
 
 import './styles.css';
+import './design-system.css';
 
 const all = [
   'ADMIN',
@@ -79,6 +80,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
 
+          <Route path="*" element={<div className="nvg-not-found"><h1>Page not found</h1><p>This address does not match a NaviGuard page.</p><a href="/profile">Open your account</a></div>} />
           {/* PUBLIC ROUTES */}
 
           <Route

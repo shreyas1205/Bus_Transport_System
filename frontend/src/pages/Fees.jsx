@@ -35,6 +35,7 @@ export default function Fees() {
   },[data.fees]);
 
   async function sandboxPay(fee){
+    if(!fee || fee.status==='PAID' || Number(fee.amount)<=0 || busy)return;
     try{
       setBusy(fee.id);setError('');setMsg('');
       const r=await api.post('/fees/pay-demo',{feeId:fee.id,method});
@@ -54,6 +55,7 @@ export default function Fees() {
   }
 
   async function payOnline(fee){
+    if(!fee || fee.status==='PAID' || Number(fee.amount)<=0 || busy)return;
     try{
       setBusy(fee.id);setError('');setMsg('');
       const r=await api.post('/payments/create-order',{feeId:fee.id,method});
@@ -92,13 +94,13 @@ export default function Fees() {
     {msg&&<div className="success">{msg}</div>}{error&&<div className="error">{error}</div>}
 
     <div className="fee-summary-grid">
-      <div className="fee-stat"><small>TOTAL FEES</small><strong>{money(totals.total)}</strong></div>
-      <div className="fee-stat good"><small>PAID</small><strong>{money(totals.paid)}</strong></div>
-      <div className="fee-stat warn"><small>OUTSTANDING</small><strong>{money(totals.pending)}</strong></div>
+      <div className="fee-stat"><small>TOTAL FEES</small><strong>{loading||error?'Unavailable':money(totals.total)}</strong></div>
+      <div className="fee-stat good"><small>PAID</small><strong>{loading||error?'Unavailable':money(totals.paid)}</strong></div>
+      <div className="fee-stat warn"><small>OUTSTANDING</small><strong>{loading||error?'Unavailable':money(totals.pending)}</strong></div>
       <div className="fee-stat"><small>PAYMENT FOR</small><strong className="fee-person">{data.owner?.name||user?.name||'—'}</strong></div>
     </div>
 
-    <section className="panel fee-pay-panel">
+    {!loading && !error && totals.pending>0 ? <section className="panel fee-pay-panel">
       <div className="panel-head"><div><span className="eyebrow">PAYMENT METHOD</span><h3>Choose how you want to pay</h3></div><span className="chip good">SECURE CHECKOUT</span></div>
       <div className="payment-methods">
         {[['UPI','UPI / QR'],['CARD','Credit / Debit Card'],['NETBANKING','Net Banking']].map(([k,label])=>
@@ -106,8 +108,10 @@ export default function Fees() {
         )}
       </div>
       <div className="payment-selection-status"><b>{method==='UPI'?'UPI / QR':method==='CARD'?'Credit / Debit Card':'Net Banking'}</b><span>{totals.pending>0?`Selected for your next payment · ${money(totals.pending)} outstanding`:'No payment required · your transport fee is fully paid'}</span></div>
-      <small className="payment-note">The method buttons select the checkout type. When a fee is pending, use Pay securely in the fee record below. Development without gateway keys uses NaviGuard sandbox payment.</small>
-    </section>
+      <small className="payment-note">The method buttons select the checkout type. When a fee is pending, use Pay securely in the fee record below. Payment availability is checked by the server. Demo restrictions remain in effect.</small>
+    </section> : <section className="panel payment-state" role="status"><span className="eyebrow">PAYMENT STATUS</span><h3>{loading?'Loading fee information':error?'Payment information unavailable':!data.fees.length?'No fee record available':totals.pending===0?'No payment required':'Payment unavailable'}</h3><p>{loading?'Checking your transport fee records.':error?'Refresh the fee ledger before attempting payment.':!data.fees.length?'Your college has not assigned a transport fee record.':'There is no outstanding transport balance.'}</p></section>}
+
+
 
     <section className="panel fee-records">
       <div className="panel-head"><div><span className="eyebrow">FEE LEDGER</span><h3>Transport fee records</h3></div><button className="secondary" onClick={load}>Refresh</button></div>
@@ -120,7 +124,7 @@ export default function Fees() {
           <td><b>{money(f.amount)}</b></td><td>{date(f.dueDate)}</td>
           <td><span className={f.status==='PAID'?'chip good':'chip warn'}>{f.status}</span></td>
           <td>{f.status==='PAID'?<button className="secondary small" onClick={()=>showReceipt(lastPaid?.id)} disabled={!lastPaid}>View receipt</button>:
-          <div className="button-row"><button className="secondary small" disabled={busy===f.id} onClick={()=>sandboxPay(f)}>Sandbox Pay</button><button className="primary small" disabled={busy===f.id} onClick={()=>payOnline(f)}>{busy===f.id?'Processing…':'Pay securely'}</button></div>}</td></tr>
+          <div className="button-row"><button className="secondary small" disabled={!!busy || loading || !!error || Number(f.amount)<=0} onClick={()=>sandboxPay(f)}>Sandbox Pay</button><button className="primary small" disabled={!!busy || loading || !!error || Number(f.amount)<=0} onClick={()=>payOnline(f)}>{busy===f.id?'Processing…':'Pay securely'}</button></div>}</td></tr>
         })}</tbody></table></div>}
     </section>
 
