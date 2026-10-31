@@ -26,8 +26,8 @@ $login = Invoke-RestMethod `
   -Uri "http://localhost:4000/api/auth/login" `
   -ContentType "application/json" `
   -Body (@{
-    email = "driver1@campusbus.local"
-    password = "Pass@123"
+    email = "hod.driver@naviguard.example"
+    password = "<DRIVER password from backend/.env.hod-demo>"
   } | ConvertTo-Json)
 
 $headers = @{

@@ -5,7 +5,7 @@ import { api } from '../api';
 const initial = {
   name: '',
   email: '',
-  password: 'Pass@123',
+  password: '',
   role: 'DRIVER',
   phone: '',
   institutionId: '',

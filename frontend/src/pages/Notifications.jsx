@@ -444,11 +444,11 @@ export default function Notifications() {
             🔔
           </div>
 
-          <h3>
+          <h3 style={{ color: '#0f172a', margin: '0 0 8px' }}>
             No notifications yet
           </h3>
 
-          <p>
+          <p style={{ color: '#475569', margin: 0 }}>
             Boarding and drop-off
             updates will appear here.
           </p>

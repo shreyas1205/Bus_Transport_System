@@ -1740,7 +1740,7 @@ html,body,#root{margin:0;min-height:100%;background:#061321}body{min-width:320px
 .driver-document-grid{display:grid;grid-template-columns:1fr 260px;gap:16px;padding:18px}
 .document-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .document-facts>div{padding:13px;border:1px solid rgba(103,166,218,.1);border-radius:10px;background:#061725}
-.document-facts small{display:block;color:#587991;font-size:11px;font-weight:900}.document-facts b{display:block;margin-top:6px;color:#dcecf7;font-size:11px}
+.document-facts small{display:block;color:#9fc2dc;font-size:12px;font-weight:900;letter-spacing:.04em}.document-facts b{display:block;margin-top:6px;color:#dcecf7;font-size:11px}
 .license-preview{overflow:hidden;min-height:150px;border:1px solid rgba(103,166,218,.12);border-radius:11px;background:#061725}.license-preview img{display:block;width:100%;height:100%;object-fit:contain}
 @media(max-width:1000px){.profile-hero{grid-template-columns:1fr}.profile-account-summary{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.premium-profile-form,.profile-account-summary,.document-facts{grid-template-columns:1fr}.driver-document-grid{grid-template-columns:1fr}.profile-identity{align-items:flex-start}.profile-hero{padding:16px}}
@@ -3187,3 +3187,13 @@ textarea:focus-visible {
 @media(max-width:650px){.nvg-route-caution-actions {width:100%;}}
 
 }
+
+/* UI spacing pass: dashboard stat cards and text */
+.stat-grid{gap:18px}
+.stat-card{padding:22px}
+.stat-card strong{letter-spacing:.02em;line-height:1.25}
+.stat-card small{letter-spacing:.04em;margin-top:6px}
+.stat-card p{letter-spacing:.02em;line-height:1.6;margin-top:8px}
+.dashboard-grid{gap:20px}
+.panel{letter-spacing:.01em}
+.dashboard-hero{margin-bottom:20px}
