@@ -12,7 +12,7 @@ const DEVIATION_COOLDOWN_MS = 15 * 60 * 1000;
 const INEVITABLE_DEVIATION_COOLDOWN_MS = 30 * 60 * 1000;
 const OVERSPEED_COOLDOWN_MS = 5 * 60 * 1000;
 const STALE_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
-const tripSessions = new Map();
+export const tripSessions = new Map();
 
 function todayStart() {
   const start = new Date();

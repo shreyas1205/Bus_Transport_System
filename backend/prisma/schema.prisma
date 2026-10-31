@@ -499,3 +499,9 @@ model AuthRateLimit {
 
   @@index([expiresAt])
 }
+
+model TripSession {
+  driverId  String   @id
+  data      Json
+  updatedAt DateTime @updatedAt
+}

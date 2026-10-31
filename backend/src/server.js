@@ -19,6 +19,8 @@ import reportRoutes from './routes/reports.js';
 import userRoutes from './routes/users.js';
 import transportSelectionRoutes from './routes/transportSelection.js';
 import liveLocationRoutes from './routes/liveLocation.js';
+import { tripSessions } from './routes/liveLocation.js';
+import { restoreTripSessions, startTripPersistence } from './services/tripStore.js';
 import complaintRoutes from './routes/complaints.js';
 import { startDailyReportJob } from './jobs/dailyReport.js';
 import notificationRoutes from './routes/notifications.js';
@@ -35,9 +37,24 @@ app.use('/api/auth',authRoutes); app.use('/api/dashboard',dashboardRoutes); app.
 app.use('/api/fees',feeRoutes); app.use('/api/complaints',complaintRoutes); app.use('/api/payments',paymentRoutes); app.use('/api/passes',passRoutes); app.use('/api/maintenance',maintenanceRoutes); app.use('/api/incidents',incidentRoutes); app.use('/api/vehicles',vehicleRoutes); app.use('/api/reports',reportRoutes); app.use('/api/users',userRoutes); app.use('/api/transport-selection',transportSelectionRoutes); app.use('/api/live-location',liveLocationRoutes);app.use('/api/notifications', notificationRoutes);
 app.use((err,req,res,next)=>{console.error(err);res.status(500).json({message:'Server error',error:process.env.NODE_ENV==='production'?undefined:err.message});});
 const port=Number(process.env.PORT||5000);
-server.listen(port,demoListenerHost(),()=>console.log(`NaviGuard API running on http://localhost:${port}`));
+server.listen(port,demoListenerHost(),async()=>{
+  console.log(`NaviGuard API running on http://localhost:${port}`);
+  try {
+    const restored = await restoreTripSessions(tripSessions);
+    if (restored) console.log(`Restored ${restored} active trip(s) from the database.`);
+  } catch (error) {
+    console.error('Could not restore trips:', error.message);
+  }
+});
+const flushTrips = startTripPersistence(tripSessions);
 io.on('connection',socket=>socket.emit('system:welcome',{message:'Connected to NaviGuard realtime service'}));
 startDailyReportJob();
 recoverPendingAccidentCountdowns(io);
 startTemporaryDriverAssignmentJob(io);
-process.on('SIGINT',async()=>{await prisma.$disconnect();process.exit(0)});
+async function shutdown(){
+  try { await flushTrips(); } catch (error) { console.error('Could not save trips on shutdown:', error.message); }
+  await prisma.$disconnect();
+  process.exit(0);
+}
+process.on('SIGINT',shutdown);
+process.on('SIGTERM',shutdown);
