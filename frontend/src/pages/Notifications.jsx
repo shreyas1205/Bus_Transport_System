@@ -353,7 +353,9 @@ export default function Notifications() {
       marginTop: '12px',
       marginBottom: '10px',
       color: '#334155',
-      lineHeight: 1.6
+      lineHeight: 1.6,
+      whiteSpace: 'pre-line',
+      overflowWrap: 'anywhere'
     },
 
     time: {
@@ -442,11 +444,11 @@ export default function Notifications() {
             🔔
           </div>
 
-          <h3>
+          <h3 style={{ color: '#0f172a', margin: '0 0 8px' }}>
             No notifications yet
           </h3>
 
-          <p>
+          <p style={{ color: '#475569', margin: 0 }}>
             Boarding and drop-off
             updates will appear here.
           </p>

@@ -4,7 +4,12 @@ import { auth, allow } from '../middleware.js';
 
 const router=express.Router();
 const dayStart=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
-const finalAmount=f=>Math.max(0,Number(f.baseAmount||f.amount||0)-Number(f.discountAmount||0)+Number(f.adjustmentAmount||0));
+// baseAmount may legitimately be 0. Legacy rows without baseAmount store the
+// already-adjusted total in amount, so adjustments must not be re-applied.
+const finalAmount=f=>{
+ if(f.baseAmount===null||f.baseAmount===undefined)return Math.max(0,Number(f.amount??0));
+ return Math.max(0,Number(f.baseAmount)-Number(f.discountAmount??0)+Number(f.adjustmentAmount??0));
+};
 
 router.get('/summary',auth,allow('ADMIN','DRIVER','STUDENT','STAFF','PARENT'),async(req,res)=>{
  const [users,vehicles,routes,incidents,pendingFees,todayBoarding]=await Promise.all([

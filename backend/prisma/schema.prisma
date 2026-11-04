@@ -91,6 +91,13 @@ enum LicenseVerificationStatus {
   REJECTED
 }
 
+enum TemporaryDriverAssignmentStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 model User {
   id                       String    @id @default(cuid())
   name                     String
@@ -103,6 +110,7 @@ model User {
   pickupStopId             String?
   passwordVersion          Int       @default(0)
   passwordResetRequestedAt DateTime?
+  approvalStatus           String    @default("APPROVED")
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
@@ -114,6 +122,8 @@ model User {
   assignedRoute Route?  @relation("UserAssignedRoute", fields: [assignedRouteId], references: [id])
   pickupStop    Stop?   @relation("UserPickupStop", fields: [pickupStopId], references: [id])
   driverRoutes  Route[] @relation("RouteDriver")
+  temporaryDriverAssignments TemporaryDriverAssignment[] @relation("TemporaryDriver")
+  coveredDriverAssignments   TemporaryDriverAssignment[] @relation("OriginalDriver")
 
   boardingEvents          BoardingEvent[]
   payments                Payment[]
@@ -159,16 +169,30 @@ model DriverProfile {
 }
 
 model ParentProfile {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  studentId String?
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  studentId         String?
+  verifiedStudentId String?
+  verifiedAt        DateTime?
+  verifiedBy        String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ParentLinkOtp {
+  id        String   @id @default(cuid())
+  parentId  String   @unique
+  studentId String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model Route {
   id                  String   @id @default(cuid())
   arrivalAlertMinutes Int      @default(10)
+  speedLimitKmph      Float    @default(40)
   code                String   @unique
   name                String
   description         String?
@@ -182,6 +206,7 @@ model Route {
   users                User[]                @relation("UserAssignedRoute")
   stops                RouteStop[]
   changes              RouteChange[]
+  temporaryDriverAssignments TemporaryDriverAssignment[]
   transportEnrollments TransportEnrollment[] @relation("RouteEnrollments")
 }
 
@@ -419,6 +444,29 @@ model RouteChange {
   createdAt    DateTime @default(now())
 
   route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+}
+
+model TemporaryDriverAssignment {
+  id                String                          @id @default(cuid())
+  routeId           String
+  originalDriverId  String?
+  temporaryDriverId String
+  reason            String
+  startsAt          DateTime
+  endsAt            DateTime
+  status            TemporaryDriverAssignmentStatus @default(SCHEDULED)
+  createdAt         DateTime                        @default(now())
+  activatedAt       DateTime?
+  restoredAt        DateTime?
+  cancelledAt       DateTime?
+
+  route           Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  originalDriver  User? @relation("OriginalDriver", fields: [originalDriverId], references: [id])
+  temporaryDriver User  @relation("TemporaryDriver", fields: [temporaryDriverId], references: [id])
+
+  @@index([routeId, status])
+  @@index([startsAt, endsAt])
+  @@index([temporaryDriverId, status])
 }
 
 model Complaint {

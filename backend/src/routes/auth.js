@@ -25,7 +25,8 @@ router.post(
     try {
       const {
         email,
-        password
+        password,
+        rememberMe
       } = req.body || {};
 
       if (
@@ -98,6 +99,17 @@ router.post(
         });
       }
 
+      if (user.approvalStatus && user.approvalStatus !== 'APPROVED') {
+        return res.status(403).json({
+          message:
+            user.approvalStatus === 'REJECTED'
+              ? 'This sign-up was not approved. Contact the transport office.'
+              : user.approvalStatus === 'PENDING_OTP'
+                ? 'Verify your sign-up with the code sent to the student phone first.'
+                : 'Your account is waiting for admin approval.'
+        });
+      }
+
       if (
         !user.passwordHash.startsWith(
           'scrypt$'
@@ -140,7 +152,7 @@ router.post(
         secret,
 
         {
-          expiresIn: '8h',
+          expiresIn: rememberMe === true ? '7d' : '8h',
           algorithm: 'HS256'
         }
       );
@@ -231,6 +243,17 @@ router.patch(
         licensePhoto
       } = req.body;
 
+      if (req.user.role === 'PARENT' && phone !== undefined) {
+        const current = await prisma.user.findUnique({
+          where: { id: req.user.id },
+          select: { phone: true }
+        });
+        if (!current) return res.status(404).json({ message: 'User not found.' });
+        if (String(phone ?? '').trim() !== String(current.phone ?? '').trim()) {
+          return res.status(403).json({ message: 'Contact Admin to update a verified parent phone number.' });
+        }
+      }
+
 
       // ==========================
       // LICENSE PHOTO VALIDATION
@@ -309,9 +332,7 @@ router.patch(
             // ==========================
             const allowed = {
               name,
-              phone,
-              pickupStopId,
-              assignedRouteId
+              phone
             };
 
             const userData =

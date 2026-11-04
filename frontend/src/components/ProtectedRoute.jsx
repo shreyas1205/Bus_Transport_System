@@ -3,7 +3,7 @@ import { useAuth } from '../auth';
 
 const fallbackByRole = {
   STUDENT: '/live-location',
-  PARENT: '/live-location',
+  PARENT: '/',
   DRIVER: '/live-location',
   STAFF: '/fees',
   ADMIN: '/',

@@ -1,5 +1,7 @@
+import './Users.css';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import PendingStaffApprovals from '../components/PendingStaffApprovals';
 
 const initial = {
   name: '',
@@ -13,7 +15,8 @@ const initial = {
   course: '',
   semester: '',
   department: '',
-  studentId: ''
+  studentId: '',
+  guardianPhone: ''
 };
 
 const roleAliases = {
@@ -70,10 +73,13 @@ function parseRoster(text) {
             : 1
         ] || '';
 
+      const contact = parts[roleIndex >= 0 ? roleIndex + 2 : 2] || '';
       return {
         name,
         role,
-        institutionId
+        institutionId,
+        ...(role === 'STUDENT' ? { guardianPhone: contact } : {}),
+        ...(role === 'PARENT' ? { phone: contact } : {})
       };
     });
 }
@@ -102,6 +108,8 @@ function getStatusStyle(status) {
 export default function Users() {
   const [users, setUsers] =
     useState([]);
+
+  const [guardianContacts, setGuardianContacts] = useState({});
 
   const [role, setRole] =
     useState('');
@@ -255,7 +263,9 @@ export default function Users() {
         return {
           name: parts[0] || '',
           role: roleAliases[(parts[1] || '').toLowerCase()] || (parts[1] || '').toUpperCase(),
-          institutionId: parts[2] || ''
+          institutionId: parts[2] || '',
+          ...(String(parts[1]).toUpperCase() === 'STUDENT' ? { guardianPhone: parts[3] || '' } : {}),
+          ...(String(parts[1]).toUpperCase() === 'PARENT' ? { phone: parts[3] || '' } : {})
         };
       }).filter(Boolean);
       setAiRows(rows);
@@ -316,6 +326,13 @@ export default function Users() {
       setDraftPhones(
         phones
       );
+      const contacts = {};
+      data.forEach(user => {
+        if (user.role === 'STUDENT') contacts[user.id] = user.studentProfile?.guardianPhone || '';
+        if (user.role === 'PARENT') contacts[user.id] = user.phone || '';
+      });
+      setGuardianContacts(contacts);
+
     } catch (e) {
       console.error(
         'LOAD USERS ERROR:',
@@ -416,6 +433,35 @@ export default function Users() {
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function setParentLinkVerified(user, action) {
+    try {
+      setError('');
+      setNotice('');
+      const response = await api.post(`/parent-links/admin/${user.id}/${action}`);
+      setNotice(response.data.message);
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not update parent link verification');
+    }
+  }
+
+  async function saveGuardianContact(user) {
+    try {
+      setSavingId(user.id);
+      setError('');
+      setNotice('');
+      const response = await api.patch(`/users/${user.id}/guardian-contact`, {
+        phone: guardianContacts[user.id] || ''
+      });
+      setNotice(response.data.message);
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not save parent contact');
+    } finally {
+      setSavingId('');
     }
   }
 
@@ -689,7 +735,7 @@ export default function Users() {
                   `"${String(
                     value ??
                       ''
-                  ).replaceAll(
+                  ).replace(/^[=+\-@\t\r]/, "'$&").replaceAll(
                     '"',
                     '""'
                   )}"`
@@ -721,7 +767,7 @@ export default function Users() {
       url;
 
     anchor.download =
-      'campusbus-generated-credentials.csv';
+      'naviguard-generated-credentials.csv';
 
     anchor.click();
 
@@ -845,7 +891,7 @@ export default function Users() {
       setNotice(
         response.data
           ?.message ||
-          'CampusBus account created successfully.'
+          'NaviGuard account created successfully.'
       );
 
       setCollegeRecord(
@@ -866,7 +912,7 @@ export default function Users() {
       setError(
         e.response?.data
           ?.message ||
-          'Could not create CampusBus account.'
+          'Could not create NaviGuard account.'
       );
     } finally {
       setCollegeImportBusy(
@@ -891,6 +937,7 @@ export default function Users() {
 
   return (
     <>
+      <PendingStaffApprovals />
       <div className="page-title">
         <div>
           <span className="eyebrow">
@@ -902,7 +949,7 @@ export default function Users() {
           </h2>
 
           <p>
-            Create and manage CampusBus
+            Create and manage NaviGuard
             accounts, import students and
             staff from college records,
             and review driver details.
@@ -1045,7 +1092,7 @@ export default function Users() {
 
               <p>
                 Enter a student USN or
-                staff ID. CampusBus will
+                staff ID. NaviGuard will
                 fetch the college record
                 before creating the
                 account.
@@ -1246,7 +1293,7 @@ export default function Users() {
                   }}
                 >
                   This college member
-                  already has a CampusBus
+                  already has a NaviGuard
                   account
                   {collegeRecord
                     .existingUser
@@ -1274,7 +1321,7 @@ export default function Users() {
                   >
                     {collegeImportBusy
                       ? 'Creating account…'
-                      : 'Create CampusBus account'}
+                      : 'Create NaviGuard account'}
                   </button>
 
                   <small>
@@ -1300,7 +1347,7 @@ export default function Users() {
           <div className="onboarding-head">
             <div>
               <span className="eyebrow">ACCOUNT ONBOARDING</span>
-              <h3>Add multiple CampusBus members</h3>
+              <h3>Add multiple NaviGuard members</h3>
               <p>Add people normally, paste a roster, or import a CSV. Review everything before accounts are created.</p>
             </div>
             <div className="onboarding-ready">
@@ -1330,19 +1377,21 @@ export default function Users() {
               ) : (
                 <div className="member-edit-list">
                   {aiRows.map((item,index) => {
-                    const valid=item.name && ['STUDENT','DRIVER','PARENT'].includes(item.role);
+                    const valid=item.name && ['STUDENT','DRIVER','PARENT'].includes(item.role) && (item.role !== 'STUDENT' || !!item.guardianPhone) && (item.role !== 'PARENT' || !!item.phone);
                     return <div className={`member-edit-row ${valid ? '' : 'needs-attention'}`} key={index}>
                       <div className="member-index">{String(index+1).padStart(2,'0')}</div>
                       <label><span>Name</span><input value={item.name} onChange={e=>updateAiPerson(index,'name',e.target.value)} placeholder="Full name"/></label>
                       <label><span>Role</span><select value={item.role||''} onChange={e=>updateAiPerson(index,'role',e.target.value)}><option value="">Select role</option><option value="STUDENT">Student</option><option value="DRIVER">Driver</option><option value="PARENT">Parent</option></select></label>
                       <label><span>Institution ID <em>optional</em></span><input value={item.institutionId||''} onChange={e=>updateAiPerson(index,'institutionId',e.target.value)} placeholder="Auto-generate if blank"/></label>
+                      {item.role === 'STUDENT' && <label><span>Parent phone</span><input value={item.guardianPhone||''} onChange={e=>updateAiPerson(index,'guardianPhone',e.target.value)} placeholder="Parent's phone" inputMode="tel" /></label>}
+                      {item.role === 'PARENT' && <label><span>Parent phone</span><input value={item.phone||''} onChange={e=>updateAiPerson(index,'phone',e.target.value)} placeholder="Parent's phone" inputMode="tel" /></label>}
                       <div className={`member-ready-state ${valid?'ready':'missing'}`}>{valid?'Ready':'Needs details'}</div>
                       <button type="button" className="member-remove" onClick={()=>removeAiPerson(index)}>×</button>
                     </div>
                   })}
                 </div>
               )}
-              {aiRows.length>0 && <div className="member-create-bar"><div><strong>{aiRows.filter(x=>x.name&&['STUDENT','DRIVER','PARENT'].includes(x.role)).length} of {aiRows.length} ready</strong><span>Login IDs and temporary passwords are generated automatically.</span></div><button type="button" className="primary create-members-button" onClick={aiCreate} disabled={aiBusy||aiRows.some(x=>!x.name||!['STUDENT','DRIVER','PARENT'].includes(x.role))}>{aiBusy?'Creating accounts…':`Create ${aiRows.length} account${aiRows.length===1?'':'s'}`}</button></div>}
+              {aiRows.length>0 && <div className="member-create-bar"><div><strong>{aiRows.filter(x=>x.name&&['STUDENT','DRIVER','PARENT'].includes(x.role)).length} of {aiRows.length} ready</strong><span>Login IDs and temporary passwords are generated automatically.</span></div><button type="button" className="primary create-members-button" onClick={aiCreate} disabled={aiBusy||aiRows.some(x=>!x.name||!['STUDENT','DRIVER','PARENT'].includes(x.role)||(x.role==='STUDENT'&&!x.guardianPhone)||(x.role==='PARENT'&&!x.phone))}>{aiBusy?'Creating accounts…':`Create ${aiRows.length} account${aiRows.length===1?'':'s'}`}</button></div>}
             </div>
           )}
 
@@ -1469,7 +1518,7 @@ export default function Users() {
                         .value
                     )
                 }
-                minLength="6"
+                minLength="12"
                 required
               />
             </label>
@@ -1491,6 +1540,7 @@ export default function Users() {
                 }
                 placeholder="9000000010"
                 inputMode="tel"
+                required={form.role === 'PARENT'}
               />
             </label>
 
@@ -1596,6 +1646,16 @@ export default function Users() {
                     placeholder="5"
                   />
                 </label>
+                <label>
+                  Parent mobile (automatic Parent linking)
+                  <input
+                    value={form.guardianPhone}
+                    onChange={e => change('guardianPhone', e.target.value)}
+                    placeholder="Parent's registered mobile"
+                    inputMode="tel"
+                    required
+                  />
+                </label>
               </>
             )}
 
@@ -1621,26 +1681,11 @@ export default function Users() {
               </label>
             )}
 
-            {form.role ===
-              'PARENT' && (
-              <label>
-                Student ID
-
-                <input
-                  value={
-                    form.studentId
-                  }
-                  onChange={
-                    e =>
-                      change(
-                        'studentId',
-                        e.target
-                          .value
-                      )
-                  }
-                  placeholder="Student user ID"
-                />
-              </label>
+            {form.role === 'PARENT' && (
+              <p className="full-row" style={{color:'#8fc9e5',fontSize:12}}>
+                Parent accounts link automatically when the registered phone matches
+                a Student's parent mobile. No Student ID is needed.
+              </p>
             )}
 
             <div className="full-row">
@@ -1673,22 +1718,13 @@ export default function Users() {
           USERS DIRECTORY
       ====================================== */}
 
-      <style>{`
-        .users-directory-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px}
-        .users-directory-head h3{margin:0 0 5px;color:#edf7ff;font-size:18px}.users-directory-head p{margin:0;color:#708ca4;font-size:12px}
-        .users-search{width:min(360px,100%)}
-        .users-main-table{min-width:900px}.users-main-table th{font-size:10px!important}.users-main-table td{font-size:12px!important;padding-top:14px!important;padding-bottom:14px!important}
-        .user-identity{display:flex;align-items:center;gap:11px;min-width:230px}.user-avatar{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#168df5,#1264d3);display:grid;place-items:center;color:#fff;font-weight:900;flex:none}.user-identity b{display:block;color:#eaf6ff;font-size:12px}.user-identity small{display:block;margin-top:3px;color:#66839b;font-size:10px}
-        .role-pill{display:inline-flex;padding:5px 9px;border-radius:999px;background:#0b2940;border:1px solid #164365;color:#8ecbfa;font-size:9px;font-weight:900;letter-spacing:.04em}.role-pill.driver{background:rgba(37,140,255,.12);color:#68bdff}.role-pill.student{background:rgba(46,205,148,.09);color:#6addb2}.role-pill.parent{background:rgba(174,120,255,.1);color:#c3a4ff}.role-pill.staff{background:rgba(255,184,77,.09);color:#ffc86f}
-        .driver-detail-btn{white-space:nowrap}.driver-modal-backdrop{position:fixed;inset:0;background:rgba(0,8,17,.74);backdrop-filter:blur(7px);z-index:1000;display:grid;place-items:center;padding:24px}.driver-modal{width:min(820px,96vw);max-height:90vh;overflow:auto;background:#081b2c;border:1px solid rgba(101,174,231,.18);border-radius:18px;box-shadow:0 28px 80px rgba(0,0,0,.45);padding:22px}.driver-modal-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding-bottom:17px;border-bottom:1px solid rgba(105,165,215,.1)}.driver-modal-head h3{margin:3px 0 5px;color:#edf7ff;font-size:20px}.driver-modal-head p{margin:0;color:#708ca4;font-size:11px}.driver-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.driver-detail-card{padding:14px;border:1px solid rgba(105,165,215,.1);border-radius:12px;background:#061725}.driver-detail-card small{display:block;color:#67859d;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.07em}.driver-detail-card b{display:block;margin-top:6px;color:#e6f3fd;font-size:12px}.driver-license-photo{width:100%;height:230px;object-fit:contain;background:#fff;border-radius:12px;margin-top:8px}.driver-review{grid-column:1/-1;padding:16px;border:1px solid rgba(105,165,215,.1);border-radius:12px;background:#071827}.driver-review-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.driver-review-actions{display:flex;gap:8px;flex-wrap:wrap}.driver-phone-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
-        @media(max-width:760px){.users-directory-head{align-items:stretch;flex-direction:column}.users-search{width:100%}.driver-modal-grid{grid-template-columns:1fr}.driver-review-row,.driver-phone-row{grid-template-columns:1fr}.driver-review{grid-column:auto}}
-      `}</style>
+
 
       <section className="panel">
         <div className="users-directory-head">
           <div>
             <span className="eyebrow">ACCOUNT DIRECTORY</span>
-            <h3>CampusBus members</h3>
+            <h3>NaviGuard members</h3>
             <p>{filteredUsers.length} account{filteredUsers.length === 1 ? '' : 's'} shown</p>
           </div>
           <input
@@ -1736,6 +1772,24 @@ export default function Users() {
                         <button type="button" className="secondary driver-detail-btn" onClick={() => setSelectedDriver(user)}>
                           View driver details
                         </button>
+                      ) : ['STUDENT','PARENT'].includes(user.role) ? (
+                        <div style={{display:'grid',gap:5,minWidth:180}}>
+                          <small style={{color:'#8aa5ba'}}>{user.role === 'STUDENT' ? 'Parent mobile' : 'Parent mobile'}</small>
+                          <input style={{minWidth:150,width:'100%'}} inputMode="tel"
+                            value={guardianContacts[user.id] ?? ''}
+                            onChange={e => setGuardianContacts(prev => ({...prev,[user.id]:e.target.value}))}
+                            placeholder="10-digit mobile" />
+                          <button type="button" className="secondary" disabled={savingId === user.id}
+                            onClick={() => saveGuardianContact(user)}>
+                            {savingId === user.id ? 'Saving…' : 'Save contact / auto-link'}
+                          </button>
+                          {user.role === 'PARENT' && <small style={{color:user.parentProfile?.verifiedStudentId?'#67c7a5':'#e6af61'}}>
+                            {user.parentProfile?.verifiedStudentId ? 'Verified link' : user.parentProfile?.studentId ? 'Linked, not verified' : 'Awaiting matching student'}
+                          </small>}
+                          {user.role === 'PARENT' && user.parentProfile?.studentId && <button type="button" className="secondary small" onClick={()=>setParentLinkVerified(user, user.parentProfile?.verifiedStudentId ? 'revoke' : 'verify')}>
+                            {user.parentProfile?.verifiedStudentId ? 'Revoke verification' : 'Verify parent link'}
+                          </button>}
+                        </div>
                       ) : <span style={{color:'#58758d'}}>—</span>}
                     </td>
                   </tr>

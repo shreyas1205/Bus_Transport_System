@@ -5,8 +5,10 @@ const d=v=>v?new Date(v).toLocaleDateString('en-IN'):'—';
 const km=v=>`${Number(v||0).toLocaleString('en-IN')} km`;
 export default function Maintenance(){
  const {user}=useAuth(),admin=user?.role==='ADMIN';
+ const [loading,setLoading]=useState(true),[loadFailed,setLoadFailed]=useState(false);
  const [alerts,setAlerts]=useState([]),[vehicles,setVehicles]=useState([]),[ops,setOps]=useState({routes:[],availableVehicles:[],breakdowns:[]}),[docs,setDocs]=useState([]),[notice,setNotice]=useState(''),[error,setError]=useState(''),[reason,setReason]=useState('Mechanical issue reported by driver'),[replacement,setReplacement]=useState({});
  async function load(){try{
+  setLoading(true);setLoadFailed(false);
   setError('');
   const o=await api.get('/maintenance/breakdowns');
   setOps(o.data);
@@ -18,12 +20,14 @@ export default function Maintenance(){
   }else{
     setVehicles([]);
   }
- }catch(e){setError(e.response?.data?.message||'Could not load maintenance operations.')}}
+ }catch(e){setLoadFailed(true);setError(e.response?.data?.message||'Could not load maintenance operations.')}finally{setLoading(false)}}
  useEffect(()=>{load()},[user?.role]);
  async function report(vehicleId){try{const r=await api.post('/maintenance/breakdown/report',{vehicleId,reason});setNotice(r.data.message);load()}catch(e){setError(e.response?.data?.message||'Could not report breakdown.')}}
  async function replace(routeId){try{const id=replacement[routeId];if(!id)return setError('Choose a replacement bus first.');const r=await api.post('/maintenance/breakdown/replace',{routeId,replacementVehicleId:id});setNotice(r.data.message);load()}catch(e){setError(e.response?.data?.message||'Could not assign replacement bus.')}}
  async function restore(id){try{const r=await api.post(`/maintenance/breakdown/restore/${id}`);setNotice(r.data.message);load()}catch(e){setError(e.response?.data?.message||'Could not restore bus.')}}
  async function service(id){try{await api.post(`/maintenance/${id}/service`,{serviceType:'Preventive service',notes:'Logged from operations dashboard'});setNotice('Service logged successfully.');load()}catch(e){setError(e.response?.data?.message||'Could not log service.')}}
+ if(loading)return <div className="loading-card" role="status">Loading maintenance operations…</div>;
+ if(loadFailed)return <section className="panel" role="alert"><h2>Maintenance information unavailable</h2><p>{error}</p><button className="primary" onClick={load}>Retry</button></section>;
  return <>
   <div className="page-title"><div><span className="eyebrow">{admin?'FLEET CONTINUITY':'ASSIGNED BUS'}</span><h2>{admin?'Breakdown & maintenance control':'Report bus maintenance'}</h2><p>{admin?'Keep buses service-ready, handle breakdowns and monitor driver documents.':'Report a breakdown or maintenance issue for your assigned bus only.'}</p></div></div>
   {notice&&<div className="success">{notice}</div>}{error&&<div className="error">{error}</div>}

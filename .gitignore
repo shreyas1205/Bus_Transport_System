@@ -7,3 +7,7 @@ build/
 coverage/
 .prisma/
 *.log
+*.zip
+*.backup.js
+backend/backend/
+backend/frontend/

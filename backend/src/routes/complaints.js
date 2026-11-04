@@ -2,6 +2,11 @@ import express from 'express';
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
 const router=express.Router();
+// Complaints carry contact details: deliver only to admins and the owner.
+function emitComplaint(req,event,c){
+ const io=req.app.get('io');if(!io?.to)return;
+ io.to('role:ADMIN').to(`user:${c.userId}`).emit(event,c);
+}
 const statuses=new Set(['OPEN','IN_PROGRESS','RESOLVED','REJECTED']);
 const include={user:{select:{id:true,name:true,email:true,institutionId:true,phone:true,role:true}}};
 
@@ -16,7 +21,7 @@ router.post('/',auth,allow('STUDENT','PARENT'),async(req,res)=>{
  const c=await prisma.complaint.create({data:{userId:req.user.id,subject,category,description},include});
  const admins=await prisma.user.findMany({where:{role:'ADMIN'},select:{id:true}});
  if(admins.length)await prisma.notification.createMany({data:admins.map(a=>({userId:a.id,type:'GENERAL',title:`New complaint · ${subject}`,message:`${req.user.name||req.user.role} submitted a ${category.replaceAll('_',' ').toLowerCase()} complaint.`}))});
- req.app.get('io')?.emit('complaint:new',c);res.status(201).json(c);
+ emitComplaint(req,'complaint:new',c);res.status(201).json(c);
 });
 router.patch('/:id/status',auth,allow('ADMIN'),async(req,res)=>{
  const status=String(req.body?.status||'').trim(),adminResponse=typeof req.body?.adminResponse==='string'?req.body.adminResponse.trim():undefined;
@@ -24,6 +29,6 @@ router.patch('/:id/status',auth,allow('ADMIN'),async(req,res)=>{
  const old=await prisma.complaint.findUnique({where:{id:req.params.id}});if(!old)return res.status(404).json({message:'Complaint not found.'});
  const c=await prisma.complaint.update({where:{id:old.id},data:{status,...(adminResponse!==undefined?{adminResponse:adminResponse||null}:{}),resolvedAt:status==='RESOLVED'?(old.resolvedAt||new Date()):null},include});
  await prisma.notification.create({data:{userId:old.userId,type:'GENERAL',title:`Complaint ${status.replaceAll('_',' ').toLowerCase()}`,message:adminResponse||`Your complaint "${old.subject}" is now ${status.replaceAll('_',' ').toLowerCase()}.`}});
- req.app.get('io')?.emit('complaint:update',c);res.json(c);
+ emitComplaint(req,'complaint:update',c);res.json(c);
 });
 export default router;

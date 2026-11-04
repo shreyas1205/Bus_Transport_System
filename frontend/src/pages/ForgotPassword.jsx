@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 
-const API = (
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:4000/api'
-).replace(/\/$/, '');
+import { API_URL } from '../api.js';
+
+const API = API_URL.replace(/\/$/, '');
 
 const field = {
   width: '100%',
   boxSizing: 'border-box',
   padding: '12px',
-  border: '1px solid #bdc9bf',
+  border: '1px solid var(--nvg-line)',
+  background: '#09192c',
+  color: 'var(--nvg-text)',
   borderRadius: '9px',
   font: 'inherit',
   marginTop: '7px'
@@ -18,8 +19,8 @@ const field = {
 const button = {
   ...field,
   cursor: 'pointer',
-  background: '#d2f872',
-  color: '#14241b',
+  background: 'var(--nvg-blue)',
+  color: 'white',
   fontWeight: 700
 };
 
@@ -330,14 +331,14 @@ export default function ForgotPassword({
     <main
       style={{
         minHeight: '100vh',
-        background: '#f1f5ef',
+        background: 'var(--nvg-bg)',
         display: 'grid',
         placeItems: 'center',
         padding: '24px',
         boxSizing: 'border-box',
         fontFamily:
           'system-ui, sans-serif',
-        color: '#17271d'
+        color: 'var(--nvg-text)'
       }}
     >
       <section
@@ -347,10 +348,11 @@ export default function ForgotPassword({
           maxWidth: '450px',
           padding: '30px',
           boxSizing: 'border-box',
-          background: 'white',
+          background: 'var(--nvg-glass)',
+          boxShadow: 'var(--nvg-shadow)',
           borderRadius: '18px',
           border:
-            '1px solid #dce4da'
+            '1px solid var(--nvg-line)'
         }}
       >
         <p
@@ -360,7 +362,7 @@ export default function ForgotPassword({
             fontSize: '13px'
           }}
         >
-          CAMPUSBUS
+          NAVIGUARD
         </p>
 
         <h1
@@ -378,7 +380,7 @@ export default function ForgotPassword({
         <p
           style={{
             lineHeight: 1.6,
-            color: '#556459'
+            color: 'var(--nvg-muted)'
           }}
         >
           {done
@@ -390,7 +392,7 @@ export default function ForgotPassword({
           <p
             role="alert"
             style={{
-              color: '#a12020',
+              color: '#ffa6b4',
               lineHeight: 1.5
             }}
           >
@@ -402,7 +404,7 @@ export default function ForgotPassword({
           <p
             role="status"
             style={{
-              color: '#315d37',
+              color: '#82ebc3',
               lineHeight: 1.5
             }}
           >
@@ -667,7 +669,7 @@ export default function ForgotPassword({
                 style={{
                   ...button,
                   background:
-                    '#edf1eb'
+                    '#162b45'
                 }}
                 disabled={
                   busy ||
@@ -689,7 +691,7 @@ export default function ForgotPassword({
                 style={{
                   ...button,
                   background:
-                    'white'
+                    '#162b45'
                 }}
                 disabled={busy}
                 onClick={() => {
@@ -717,7 +719,7 @@ export default function ForgotPassword({
           style={{
             border: 0,
             background: 'none',
-            color: '#315d37',
+            color: 'var(--nvg-cyan)',
             marginTop: '20px',
             cursor: 'pointer',
             font: 'inherit'

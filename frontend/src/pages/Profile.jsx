@@ -297,8 +297,8 @@ export default function Profile() {
         <div className="profile-identity">
           <div className="profile-avatar-large">{user.name?.[0]?.toUpperCase() || '?'}</div>
           <div className="profile-identity-copy">
-            <span className="section-kicker">CAMPUSBUS ACCOUNT</span>
-            <h3>{user.name || 'CampusBus user'}</h3>
+            <span className="section-kicker">NAVIGUARD ACCOUNT</span>
+            <h3>{user.name || 'NaviGuard user'}</h3>
             <p>{user.email}</p>
             <div className="profile-badges">
               <span className="status-pill info">{user.role}</span>

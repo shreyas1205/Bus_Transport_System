@@ -1,7 +1,9 @@
+import { isDemoMode, blockDemoAction, allowDemoPayment } from '../demoMode.js';
 import express from 'express';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
+import { verifiedParentStudent } from '../services/parentTransportAccess.js';
 
 const router = express.Router();
 
@@ -52,6 +54,7 @@ async function ensureBusPass(tx, studentId) {
 }
 
 async function sendAutomaticFeeReminders() {
+  if (isDemoMode()) return;
   const now = new Date();
   const horizon = new Date(now);
   horizon.setDate(horizon.getDate() + 5);
@@ -74,7 +77,10 @@ async function sendAutomaticFeeReminders() {
       where: { studentId: fee.userId },
       select: { userId: true },
     });
-    const recipients = [fee.userId, ...parentProfiles.map(p => p.userId)];
+    const verifiedParents = await Promise.all(parentProfiles.map(async profile =>
+      await verifiedParentStudent(profile.userId) === fee.userId ? profile.userId : null
+    ));
+    const recipients = [fee.userId, ...verifiedParents.filter(Boolean)];
 
     for (const userId of recipients) {
       const duplicate = await prisma.notification.findFirst({
@@ -100,7 +106,7 @@ async function sendAutomaticFeeReminders() {
 }
 
 let reminderTimerStarted = false;
-if (!reminderTimerStarted) {
+if (!isDemoMode() && !reminderTimerStarted) {
   reminderTimerStarted = true;
   setTimeout(() => sendAutomaticFeeReminders().catch(() => {}), 30000);
   setInterval(() => sendAutomaticFeeReminders().catch(() => {}), 6 * 60 * 60 * 1000);
@@ -115,11 +121,7 @@ function academicYearFor(date = new Date()) {
 
 async function feeOwnerIdFor(user) {
   if (user.role !== 'PARENT') return user.id;
-  const parent = await prisma.parentProfile.findUnique({
-    where: { userId: user.id },
-    select: { studentId: true },
-  });
-  return parent?.studentId || null;
+  return verifiedParentStudent(user.id);
 }
 
 router.get('/my', auth, allow('STUDENT','STAFF','PARENT'), async (req,res)=> {
@@ -284,12 +286,12 @@ router.post('/admin/:feeId/refund', auth, allow('ADMIN'), async (req,res) => {
   res.json({message:'Refund recorded and bus pass moved to renewal pending.'});
 });
 
-router.post('/admin/run-reminders', auth, allow('ADMIN'), async (req,res) => {
+router.post('/admin/run-reminders', auth, allow('ADMIN'), blockDemoAction, async (req,res) => {
   await sendAutomaticFeeReminders();
   res.json({message:'Fee reminder check completed.'});
 });
 
-router.post('/:feeId/remind', auth, allow('ADMIN'), async (req,res) => {
+router.post('/:feeId/remind', auth, allow('ADMIN'), blockDemoAction, async (req,res) => {
   const fee = await prisma.fee.findUnique({ where:{ id:req.params.feeId }, include:{ user:true } });
   if (!fee || fee.status === 'PAID') return res.status(400).json({ message:'Pending fee not found.' });
 
@@ -297,7 +299,10 @@ router.post('/:feeId/remind', auth, allow('ADMIN'), async (req,res) => {
     where:{ studentId:fee.userId },
     select:{ userId:true },
   });
-  const recipients = [fee.userId, ...parentProfiles.map(p=>p.userId)];
+  const verifiedParents = await Promise.all(parentProfiles.map(async profile =>
+    await verifiedParentStudent(profile.userId) === fee.userId ? profile.userId : null
+  ));
+  const recipients = [fee.userId, ...verifiedParents.filter(Boolean)];
   await prisma.notification.createMany({
     data: recipients.map(userId => ({
       userId,
@@ -310,7 +315,7 @@ router.post('/:feeId/remind', auth, allow('ADMIN'), async (req,res) => {
   res.json({ message:`Reminder sent to ${recipients.length} account${recipients.length===1?'':'s'}.` });
 });
 
-router.post('/pay-demo', auth, allow('STUDENT','STAFF','PARENT'), async (req,res)=>{
+router.post('/pay-demo', auth, allow('STUDENT','STAFF','PARENT'), allowDemoPayment, async (req,res)=>{
   const ownerId = await feeOwnerIdFor(req.user);
   const fee = await prisma.fee.findUnique({ where: { id: req.body.feeId } });
   if (!fee || fee.userId !== ownerId || fee.status === 'PAID') return res.status(400).json({message:'Invalid or already paid fee'});

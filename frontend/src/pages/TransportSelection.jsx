@@ -38,7 +38,7 @@ export default function TransportSelection() {
 
   async function confirmSelection(e) {
     e.preventDefault();
-    if (!routeId || !stopId) { setError('Choose a route and pickup point.'); return; }
+    if (!selectedRoute || !selectedStop) { setError('Choose a route and pickup point.'); return; }
     const ok = window.confirm(`Lock ${selectedRoute?.name} / ${selectedStop?.name} for ${current?.academicYear}? You will not be able to change it yourself during this academic year.`);
     if (!ok) return;
     setSaving(true); setError(''); setMsg('');
@@ -57,7 +57,7 @@ export default function TransportSelection() {
 
   if (current?.locked) {
     const s = current.selection;
-    return <><div className="page-title"><div><span className="eyebrow">ACADEMIC YEAR {current.academicYear}</span><h2>My CampusBus Route</h2><p>Your route selection is locked for this academic year.</p></div><span className="chip good">LOCKED</span></div>
+    return <><div className="page-title"><div><span className="eyebrow">ACADEMIC YEAR {current.academicYear}</span><h2>My NaviGuard Route</h2><p>Your route selection is locked for this academic year.</p></div><span className="chip good">LOCKED</span></div>
       {msg && <div className="success">{msg}</div>}
       {error && <div className="error">{error}</div>}
       <section className="panel transport-selection-card">
@@ -68,15 +68,16 @@ export default function TransportSelection() {
     </>;
   }
 
-  return <><div className="page-title"><div><span className="eyebrow">ACADEMIC YEAR {current?.academicYear}</span><h2>Choose your CampusBus route</h2><p>Select the route and pickup point you want to use. Once confirmed, it stays fixed for the whole academic year.</p></div></div>
+  return <><div className="page-title"><div><span className="eyebrow">ACADEMIC YEAR {current?.academicYear}</span><h2>Choose your NaviGuard route</h2><p>Select the route and pickup point you want to use. Once confirmed, it stays fixed for the whole academic year.</p></div></div>
     {msg && <div className="success">{msg}</div>}
     {error && <div className="error">{error}</div>}
+    {!routes.length && !error && <div className="hint">No active routes are available. Contact Admin.</div>}
     <section className="panel"><form className="stack" onSubmit={confirmSelection}>
       <label>Route<select className="select" value={routeId} onChange={e=>{setRouteId(e.target.value);setStopId('')}} required><option value="">Select a route</option>{routes.map(r=><option key={r.id} value={r.id}>{r.code} · {r.name}{r.busNumber ? ` · Bus ${r.busNumber}` : ''}</option>)}</select></label>
       {selectedRoute && <div className="hint"><b>{selectedRoute.description || selectedRoute.name}</b>{selectedRoute.driver?.name && <span> Driver: {selectedRoute.driver.name}{selectedRoute.driver.phone ? ` · ${selectedRoute.driver.phone}` : ''}</span>}</div>}
       <label>Pickup point<select className="select" value={stopId} onChange={e=>setStopId(e.target.value)} disabled={!selectedRoute} required><option value="">Select your pickup point</option>{selectedRoute?.stops.map(s=><option key={s.id} value={s.id}>{s.sequence}. {s.name} · {s.plannedEta || 'Time not set'} · ₹{Number(s.transportFee||0).toLocaleString('en-IN')}</option>)}</select></label>
       {selectedStop && <div className="panel selection-preview"><h3>{selectedStop.name}</h3><p>Arrival: <b>{selectedStop.plannedEta || '—'}</b></p><p>Annual transport fee: <b>₹{Number(selectedStop.transportFee||0).toLocaleString('en-IN')}</b></p><p>{selectedStop.locationText}</p>{selectedStop.googleMapsUrl && <a href={selectedStop.googleMapsUrl} target="_blank" rel="noreferrer">📍 Open pickup point in Google Maps</a>}</div>}
-      <button className="primary" type="submit" disabled={saving || !routeId || !stopId}>{saving ? 'Saving…' : `Confirm route for ${current?.academicYear || 'this year'}`}</button>
+      <button className="primary" type="submit" disabled={saving || !selectedRoute || !selectedStop}>{saving ? 'Saving…' : `Confirm route for ${current?.academicYear || 'this year'}`}</button>
     </form></section>
   </>;
 }

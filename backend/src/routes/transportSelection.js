@@ -100,7 +100,7 @@ router.get('/me', auth, allow('STUDENT'), async (req, res) => {
 
 router.post('/select', auth, allow('STUDENT'), async (req, res) => {
   const { routeId, stopId } = req.body;
-  if (!routeId || !stopId) return res.status(400).json({ message: 'Route and pickup point are required.' });
+  if (typeof routeId !== 'string' || !routeId.trim() || typeof stopId !== 'string' || !stopId.trim()) return res.status(400).json({ message: 'Route and pickup point are required.' });
 
   const academicYear = academicYearFor();
   const existing = await prisma.transportEnrollment.findUnique({
@@ -122,7 +122,9 @@ router.post('/select', auth, allow('STUDENT'), async (req, res) => {
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + 10);
 
-  const result = await prisma.$transaction(async tx => {
+  let result;
+  try {
+  result = await prisma.$transaction(async tx => {
     const enrollment = await tx.transportEnrollment.create({
       data: { userId: req.user.id, routeId, stopId, academicYear },
       include: { route: { include: { assignedBus: true, assignedDriver: { select: { name: true, phone: true } } } }, stop: true },
@@ -135,13 +137,18 @@ router.post('/select', auth, allow('STUDENT'), async (req, res) => {
 
     const feeRecord = await tx.fee.findFirst({ where: { userId: req.user.id, academicYear } });
     if (feeRecord && feeRecord.status !== 'PAID') {
-      await tx.fee.update({ where: { id: feeRecord.id }, data: { amount: fee, dueDate } });
+      const amount = Math.max(0, fee - Number(feeRecord.discountAmount || 0) + Number(feeRecord.adjustmentAmount || 0));
+      await tx.fee.update({ where: { id: feeRecord.id }, data: { amount, baseAmount: fee, pickupStopId: stopId, dueDate } });
     } else if (!feeRecord) {
-      await tx.fee.create({ data: { userId: req.user.id, academicYear, amount: fee, dueDate } });
+      await tx.fee.create({ data: { userId: req.user.id, academicYear, amount: fee, baseAmount: fee, pickupStopId: stopId, dueDate } });
     }
 
     return enrollment;
   });
+  } catch (error) {
+    if (error.code === 'P2002') return res.status(409).json({ message: `Your route for ${academicYear} is already locked. Contact Admin if it needs to be changed.` });
+    throw error;
+  }
 
   res.status(201).json({
     message: `Route locked for ${academicYear}. You cannot change it yourself during this academic year.`,

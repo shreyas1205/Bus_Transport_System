@@ -5,6 +5,7 @@ import {
 } from 'react-router-dom';
 
 import { AuthProvider } from './auth';
+import Signup from './pages/Signup';
 
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
@@ -30,6 +31,10 @@ import Complaints from './pages/Complaints';
 import Notifications from './pages/Notifications';
 
 import './styles.css';
+import './design-system.css';
+import './ui-polish.css';
+import { installMicroInteractions } from './interactions.js';
+installMicroInteractions();
 
 const all = [
   'ADMIN',
@@ -51,7 +56,8 @@ const self = [
 ];
 
 const dashboardRoles = [
-  'ADMIN'
+  'ADMIN',
+  'PARENT'
 ];
 
 const routeRoles = [
@@ -78,11 +84,17 @@ export default function App() {
       <BrowserRouter>
         <Routes>
 
+          <Route path="*" element={<div className="nvg-not-found"><h1>Page not found</h1><p>This address does not match a NaviGuard page.</p><a href="/profile">Open your account</a></div>} />
           {/* PUBLIC ROUTES */}
 
           <Route
             path="/login"
             element={<Login />}
+          />
+
+          <Route
+            path="/signup"
+            element={<Signup />}
           />
 
           <Route

@@ -1,0 +1,60 @@
+# NaviGuard audit — 2026-10-25
+
+**Overall: FAIL — critical authorization, payment and data-loss defects.** All **15 existing test files passed** (9 backend, 6 frontend), but these mostly exercise mocks or source assertions. No live end-to-end success is claimed.
+
+Scope: active frontend/backend, five roles, auth/JWT, database schema/migration, APIs, fleet/routes, GPS, boarding, notifications, SOS, payments and analytics. Dependencies, generated output and backup copies were excluded from source review. Existing checks ran before supplemental probes. No application source fixes, production mutations, external messages, commits or pushes. This directory has no Git repository, so a Git diff was unavailable.
+
+PASS means the stated check passed; FAIL means a reproduced defect or explicitly identified static defect; BLOCKED means a required environment/tool was unavailable; NOT TESTED means execution was not attempted. Isolated probes used synthetic identities, in-memory persistence and stubbed external services.
+
+## Executed checks and limits
+
+| Status | Area | Evidence / limit |
+|---|---|---|
+| PASS | Existing backend tests | All 9 `backend/tests/*.test.mjs` files passed. `node --test --test-isolation=none --test-reporter=tap` ran eight together and the guardian test separately. Default test-worker spawning failed with `EPERM`; the fallback completed. [Logs](.audit-backend-tests.log), [guardian log](.audit-backend-guardian.log). |
+| PASS | Existing frontend tests | All 6 `frontend/tests/*.test.mjs` files passed through direct Node execution; includes 13 named tests plus three assertion suites. `npm.cmd run check:demo` and `check:ui` also passed. [Details](.audit-frontend.md). |
+| PASS | Backend syntax | `node --check` passed for 34 active backend source/Prisma JavaScript files. This is not lint or an integration build. |
+| BLOCKED | Builds / lint | Frontend `npm.cmd run build` failed before bundling: Vite/esbuild `spawn EPERM`. Backend defines no build script; neither package defines lint. [Build log](.audit-frontend-build.log). No application build failure is inferred from the sandbox error. |
+| PASS / FAIL | Authentication and JWT reuse | [Security harness](.audit-security-check.mjs): 10 PASS groups, 4 reproduced failure assertions. Reused the same synthetic JWT; checked all 25 five-role allow/deny combinations, database-authoritative roles, downgrade/deletion/password-version revocation, malformed/tampered/expired/wrong-algorithm rejection, scrypt and public-user redaction. Failures are listed below. |
+| PASS / FAIL | API handlers | [Route harness](.audit-route-check.mjs): 3 PASS / 4 FAIL checks. Across nine routers, 51/51 route chains rejected anonymous requests using injected auth; 45 declare role lists. Complaint ownership/Staff denial passed. This checks route wiring and selected handlers, not real HTTP authentication. |
+| PASS / FAIL | Routes, buses, GPS, boarding | Existing tests cover route selection/locking, fee creation, inactive-bus/delete guards, driver scope, temporary assignments, GPS freshness/accuracy, QR integrity/expiry and mocked boarding/drop-off concurrency. Supplemental incident/GPS probes reproduced failures below. [Probe log](.audit-backend-probes.log). |
+| PASS / FAIL | Frontend workflows / offline | Mocked role navigation, token persistence/replacement/logout, live refresh/recovery, map/ETA, complaints/admin response and payment visibility passed. Offline owner isolation passed; concurrent enqueue/flush, duplicate drains and HTTP 503 retention failed. CSV escaping failed a formula-neutralization probe. |
+| FAIL | Analytics calculation | Actual `finalAmount` with `{baseAmount:0, amount:100, adjustmentAmount:100}` returned **200**, expected **100**. Aggregate accuracy against real records is BLOCKED. |
+| BLOCKED | Database / live API / real JWT reuse | Read-only Prisma `SELECT 1` failed with `PrismaClientInitializationError`; TCP probes to configured local DB, backend and frontend returned `ECONNREFUSED`. No authorized test JWT/session was supplied or found in test-token environment variables. Synthetic tokens/secrets remained in memory and were never logged. |
+| BLOCKED | Prisma validation | Local CLI validation did not complete within its initial tool yield; bounded subprocess retry hit `spawn EPERM`. No schema-validation PASS claimed. Migration incompatibility was established by static inspection below. |
+| BLOCKED | Live integrations and E2E | No reachable isolated DB/app or authorized test fixtures/devices: real five-role browser/API workflows, GPS hardware, camera QR, delivered browser/email/SMS notifications, OTP delivery, gateway and emergency webhook tests could not run safely. |
+| NOT TESTED | Additional integration checks | Actual migration deployment, transaction rollback/advisory locks, load/race behavior against PostgreSQL, restart/multi-worker recovery, socket-client disclosure reproduction, browser visual/accessibility review, real spreadsheet formula execution and dependency CVE scanning. |
+
+Normal backend startup was intentionally avoided: `backend/src/server.js:40–42` launches scheduled email, accident recovery and assignment synchronization; `backend/src/routes/fees.js:104–108` starts reminder timers. Live tracking GET also writes notifications. Database inspection was limited to a read-only connection probe; seeds, schema push/reset, payments and dispatch were not run against configured data.
+
+## Prioritized fixes
+
+### P1 — resolve before deployment
+
+1. **FAIL: ordinary mode can mark fees paid without payment proof — reproduced.** `backend/src/routes/fees.js:315–327` accepts `/pay-demo`, creates a PAID payment, marks the fee PAID and calls pass issuance. Probe returned **200 / PAID** with no gateway verification (pass collaborator stubbed). `backend/src/demoMode.js:22–24` blocks only when demo mode is enabled; default ordinary mode permits it. Require an explicit isolated sandbox and disable this route for real data.
+2. **FAIL: unauthenticated realtime disclosure — static.** `backend/src/server.js:29,39` has no Socket.IO authentication. `backend/src/services/emergencyResponse.js:1055,1107–1113` globally emits incident/distress data containing student/guardian identities and contacts (`:801–805`); complaints also broadcast user contact data (`backend/src/routes/complaints.js:19,27`). Authenticate/revalidate sockets, authorize recipient rooms and minimize payloads.
+3. **FAIL: Parent can influence trusted guardian linkage — reproduced.** Parent profile phone change returns **200** (`backend/src/routes/auth.js:311–337`). A subsequent normal reconciliation links a matching synthetic student (`backend/src/services/autoLinkGuardians.js:45–85`); receipt then returns that student's PII **200** despite an empty verified-link allowlist (`backend/src/routes/payments.js:35–41,119–134`). This requires a later reconciliation event. Fees/reminders also trust raw links (`backend/src/routes/fees.js:118–146,298–310`). Protect/reverify guardian contact changes and enforce verified relationships consistently.
+4. **FAIL: Driver can escalate another bus's emergency — reproduced.** `backend/src/routes/incidents.js:381–423,448–618` trusts supplied bus IDs or only checks existence. Unassigned-bus SOS and accident requests returned **201**; the latter requested autonomous activation through a stub. Coordinates **999,999** were accepted. Derive the driver's active assigned bus server-side and validate coordinates/sensor bounds.
+5. **FAIL: offline boarding/GPS actions are lost or duplicated — reproduced.** `frontend/src/offlineQueue.js:76–116` overwrites a snapshot after awaiting requests: enqueue B during A's flush leaves **0** queued items instead of **1**; simultaneous drains send A twice; **503** discards A. Serialize drains, merge by item ID, use backend idempotency keys, retain retryable failures and pause on expired authentication.
+6. **FAIL: migration does not support the declared database — static.** `backend/prisma/schema.prisma:6` selects PostgreSQL; the sole migration `backend/prisma/migrations/20261002_fee_payment_upgrade/migration.sql:2–9` uses PostgreSQL-invalid `DATETIME`, assumes SQLite enums and only alters pre-existing tables. Supply a PostgreSQL baseline/incremental migrations and validate a clean deployment plus upgrade on a disposable database. This does not prove the current configured schema is broken.
+
+### P2 — correctness, privacy and reliability
+
+7. **FAIL: account security is inconsistent.** `backend/src/routes/users.js:20–24,807–817,1555–1558` creates fast unsalted SHA256 hashes and permits weaker passwords than the shared reset policy. Role update returns `passwordHash` (**reproduced**, `:2078–2099`). Use the shared password policy/hash helper and credential-redacting serializers everywhere.
+8. **FAIL: excessive location/profile disclosure.** Student `/vehicles` returns every bus with coordinates through `where={}` (**reproduced**, `backend/src/routes/vehicles.js:30–46`), bypassing narrower tracking scope. Student/Parent live tracking includes driver license details (`backend/src/routes/liveLocation.js:788–799`, static). Restrict rows and explicitly select necessary public fields.
+9. **FAIL: GPS ordering/state and emergency reliability gaps.** Identical concurrent GPS samples returned **200,200**, producing two mocked writes; sequential replay returned **400** (`backend/src/routes/liveLocation.js:1103–1127`). Trip state is process-local (`:15`), and GET creates notifications (`:818–828`). Crash speed comparison ignores sample age (`backend/src/services/emergencyResponse.js:1157–1183`); dispatch has no fetch timeout or atomic send claim (`:881–885,970–1042`, static). Persist/serialize ordering, move side effects off GET, reject stale samples and add dispatch deadlines/idempotency.
+10. **FAIL: validation and analytics arithmetic.** Bus creation accepts **capacity=-1 → 201** (`backend/src/routes/vehicles.js:70–106`); zero-base analytics double-counts adjustments (`backend/src/routes/dashboard.js:7`). Enforce positive integral capacities, geographic bounds and explicit nullish amount handling; reconcile aggregates with payments.
+11. **FAIL: unsafe CSV formulas; deployment URL inconsistency.** Boarding export leaves `=1+1` executable after CSV decoding; Users credential export uses equivalent quoting. Neutralize spreadsheet formula prefixes before quoting. `frontend/src/pages/ForgotPassword.jsx` and Socket.IO clients default to localhost while the common API uses `/api`; centralize deployment URLs and authenticated socket setup. Production impact of URLs depends on supplied Vite configuration.
+
+## Role and workflow coverage
+
+| Role | Verified in isolated tests / reviewed surface | Live workflow |
+|---|---|---|
+| Admin | Role gates, fleet/routes, complaints response, account handlers, analytics arithmetic; operational writes mocked | BLOCKED |
+| Driver | Assigned route/boarding guards, QR, GPS, trip/incident handlers, offline queue; emergency scope failure reproduced | BLOCKED |
+| Student | Selection/fee workflow, tracking refresh, QR/boarding status, own complaints, fees/passes; sandbox-payment failure reproduced | BLOCKED |
+| Parent | Verified transport guard fails closed; phone → reconciliation → receipt bypass reproduced; dashboard/notifications reviewed | BLOCKED |
+| Staff | Auth/RBAC and frontend fees/passes/profile surface checked; full Staff journey was not exercised | BLOCKED |
+
+Staff boarding policy needs clarification: scanning accepts Staff, but roster/drop-off/daily QR are Student-oriented. The UI exposes Staff fees/passes/profile only; a complete Staff boarding workflow is **NOT TESTED**, not claimed as an implemented feature failure.
+
+Reproduction scripts: `node .audit-security-check.mjs`, `node .audit-route-check.mjs`, `node .audit-backend-probes.mjs`. They use synthetic mocks; diagnostic exit code 0 does **not** mean all assertions passed. Detailed evidence: [.audit-security.md](.audit-security.md), [.audit-frontend.md](.audit-frontend.md), [.audit-backend-tests.md](.audit-backend-tests.md).

@@ -133,7 +133,7 @@ export default function Passes() {
           {passes.map((pass) => (
             <section className="panel pass-card" key={pass.id}>
               <div>
-                <span className="eyebrow">CAMPUSBUS PASS</span>
+                <span className="eyebrow">NAVIGUARD PASS</span>
                 <h3>{pass.passNumber}</h3>
                 <span className={pass.status === 'ACTIVE' ? 'chip good' : 'chip warn'}>
                   {pass.status}

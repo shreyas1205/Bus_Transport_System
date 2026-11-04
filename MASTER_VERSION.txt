@@ -1,2 +1,3 @@
-CampusBus consolidated master
-Includes premium login, AI credential assistant, live location, complaints, annual route selection, and driver boarding/parent status.
+NaviGuard Master2 — Route Builder Pro + Temporary Driver Scheduling
+Built from NaviGuard-Master2-Route-Builder-Pro.
+Includes Emergency Admin Pack, visual map route creation, in-place pickup fees, verified temporary driver scheduling, automatic activation/restoration, cancellation and assignment history.

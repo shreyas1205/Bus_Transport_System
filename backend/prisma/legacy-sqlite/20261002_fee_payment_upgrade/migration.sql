@@ -1,4 +1,4 @@
--- CampusBus fee/payment upgrade
+-- NaviGuard fee/payment upgrade
 ALTER TABLE "Fee" ADD COLUMN "baseAmount" REAL NOT NULL DEFAULT 0;
 ALTER TABLE "Fee" ADD COLUMN "discountAmount" REAL NOT NULL DEFAULT 0;
 ALTER TABLE "Fee" ADD COLUMN "adjustmentAmount" REAL NOT NULL DEFAULT 0;

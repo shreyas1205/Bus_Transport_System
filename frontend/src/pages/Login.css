@@ -1,0 +1,121 @@
+/* NaviGuard login — full-page bus photo, Midnight Teal glass.
+   Visual only; all login behaviour lives unchanged in Login.jsx. */
+.ng-login {
+  --ng-teal: #14b8a6; --ng-aqua: #5eead4; --ng-soft: rgba(45,212,191,.14); --ng-ring: rgba(94,234,212,.4);
+  --ng-grad: linear-gradient(135deg, #14b8a6, #5eead4); --ng-text: #eef3ff; --ng-muted: #9fb0d4; --ng-line: rgba(150,230,220,.14);
+  --ng-red: #ff5c7a; --ng-amber: #ffb547; --ng-spring: cubic-bezier(.34,1.56,.64,1); --ng-ease: cubic-bezier(.22,1,.36,1);
+  --ng-noise: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nMTYwJz48ZmlsdGVyIGlkPSduJz48ZmVUdXJidWxlbmNlIHR5cGU9J2ZyYWN0YWxOb2lzZScgYmFzZUZyZXF1ZW5jeT0nLjknIG51bU9jdGF2ZXM9JzMnIHN0aXRjaFRpbGVzPSdzdGl0Y2gnLz48ZmVDb2xvck1hdHJpeCB2YWx1ZXM9JzAgMCAwIDAgMSAgMCAwIDAgMCAxICAwIDAgMCAwIDEgIDAgMCAwIC41NSAwJy8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9JzEwMCUnIGhlaWdodD0nMTAwJScgZmlsdGVyPSd1cmwoI24pJy8+PC9zdmc+");
+  position: relative; min-height: 100dvh; color: var(--ng-text); background: #070b18; overflow-x: clip;
+}
+
+/* ---------- photo ---------- */
+.ng-photo { position: fixed; inset: 0; z-index: 0; overflow: hidden; }
+.ng-photo-img { position: absolute; inset: 0; background: url("/naviguard-login-photo.jpg") 50% 50% / cover no-repeat; filter: brightness(.96) saturate(1.05);
+  transition: transform 3.2s cubic-bezier(.25,.1,.25,1), filter 1s ease; }
+.ng-photo.driving .ng-photo-img { transform: scale(1.14); filter: brightness(1.04) saturate(1.12); transition: transform 3.8s cubic-bezier(.4,0,.2,1), filter .8s ease; }
+.ng-headlight { position: absolute; z-index: 1; border-radius: 50%; pointer-events: none; opacity: 0; mix-blend-mode: screen; transform: translate(-50%,-50%);
+  background: radial-gradient(ellipse, rgba(255,246,220,.95), rgba(255,226,160,.3) 35%, transparent 70%); transition: opacity 1s ease, transform 3.6s ease; }
+.ng-photo.driving .ng-headlight { opacity: .95; transform: translate(-50%,-50%) scale(1.5); }
+.ng-photo-shade { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(90deg, rgba(5,9,22,.88) 0%, rgba(5,9,22,.62) 24%, rgba(5,9,22,.12) 42%, rgba(5,9,22,0) 58%, rgba(5,9,22,.2) 70%, rgba(5,9,22,.45) 100%),
+              linear-gradient(180deg, rgba(5,9,22,.35), transparent 22%, transparent 82%, rgba(5,9,22,.55)),
+              radial-gradient(ellipse 75% 70% at 55% 62%, transparent 55%, rgba(5,9,22,.5) 100%); }
+.ng-bus-spot { position: fixed; z-index: 3; cursor: pointer; border-radius: 18px; outline: none; }
+.ng-bus-spot:focus-visible { outline: 2px solid var(--ng-aqua); outline-offset: 4px; }
+.ng-bus-hint { position: fixed; z-index: 3; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 600; color: #fff; padding: 6px 12px; border-radius: 999px;
+  background: rgba(6,11,26,.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.18); pointer-events: none; transition: opacity .5s; }
+.ng-bus-hint.gone { opacity: 0; }
+
+/* ---------- top bar ---------- */
+.ng-top { position: relative; z-index: 4; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; max-width: 1360px; margin: auto; padding: 18px max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
+.ng-logo { display: flex; gap: 12px; align-items: center; }
+.ng-logo-icon { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; background: var(--ng-grad); color: #04201d; box-shadow: 0 8px 24px rgba(20,184,166,.4); }
+.ng-logo-icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.ng-logo strong { font-size: 20px; } .ng-logo strong span { color: var(--ng-aqua); } .ng-logo small { display: block; color: var(--ng-muted); font-size: 11px; }
+.ng-support { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--ng-muted); }
+
+/* ---------- layout & hero ---------- */
+.ng-layout { position: relative; z-index: 4; pointer-events: none; max-width: 1240px; margin: auto; min-height: calc(100dvh - 82px); display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; padding: 20px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); }
+.ng-hero { max-width: 520px; text-shadow: 0 2px 24px rgba(0,0,0,.45); }
+.ng-kicker { color: var(--ng-aqua); font-size: 11px; font-weight: 700; letter-spacing: 1.6px; }
+.ng-hero h1 { font-size: clamp(30px, 3.6vw, 50px); line-height: 1.05; letter-spacing: -1.6px; margin: 12px 0 14px; text-wrap: balance;
+  background: linear-gradient(120deg, #fff 30%, #d5f7f1 70%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ng-hero h1 span { background: linear-gradient(100deg, #2dd4bf, #a7f3e4 55%, #fff); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 22px rgba(45,212,191,.25)); }
+.ng-hero p { color: var(--ng-muted); font-size: 16px; line-height: 1.6; max-width: 50ch; margin: 0; }
+.ng-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 22px; max-width: 480px; }
+.ng-feature { position: relative; padding: 10px 11px 11px; border-radius: 14px; border: 1px solid rgba(255,255,255,.08); background: rgba(8,13,30,.32);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); pointer-events: auto; text-shadow: none;
+  transition: transform .3s var(--ng-spring), border-color .3s, background .3s; }
+.ng-feature:hover { transform: translateY(-4px); border-color: var(--ng-ring); background: rgba(14,30,48,.6); }
+.ng-feature-icon { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; margin-bottom: 6px; background: var(--ng-soft); color: var(--ng-aqua); }
+.ng-feature.red .ng-feature-icon { background: rgba(255,92,122,.16); color: #ff8fa3; }
+.ng-feature-icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.ng-feature strong { font-size: 12.5px; display: block; } .ng-feature p { margin: 3px 0 0; font-size: 11px; line-height: 1.4; color: var(--ng-muted); }
+.ng-feature-arrow { position: absolute; right: 11px; top: 10px; color: var(--ng-muted); transition: transform .3s var(--ng-spring), color .3s; }
+.ng-feature:hover .ng-feature-arrow { transform: translateX(4px); color: var(--ng-aqua); }
+.ng-quote { display: flex; gap: 14px; margin: 22px 0 0; max-width: 480px; }
+.ng-quote > span { width: 3px; border-radius: 3px; background: linear-gradient(180deg, var(--ng-aqua), var(--ng-amber)); }
+.ng-quote p { margin: 0; font-size: 15px; font-style: italic; color: #e2f4f1; } .ng-quote small { color: var(--ng-muted); font-size: 11px; letter-spacing: 1.2px; }
+
+/* ---------- sign-in card ---------- */
+.ng-auth-wrap { pointer-events: auto; }
+.ng-card { position: relative; z-index: 4; pointer-events: auto; display: flex; flex-direction: column; padding: 28px 28px 22px; border-radius: 26px;
+  background: linear-gradient(150deg, rgba(14,28,44,.95), rgba(7,12,26,.96)); backdrop-filter: blur(26px) saturate(140%); -webkit-backdrop-filter: blur(26px) saturate(140%);
+  border: 1px solid var(--ng-line); box-shadow: 0 30px 80px rgba(2,6,23,.6), 0 0 0 1px rgba(45,212,191,.2), inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 40px rgba(20,184,166,.06); }
+.ng-card::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from var(--ng-a, 0deg), transparent 0 70%, var(--ng-aqua), var(--ng-teal), transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: ng-rot 6s linear infinite; }
+.ng-card::after, .ng-feature::after, .ng-role::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background-image: var(--ng-noise); background-size: 160px; opacity: .07; mix-blend-mode: overlay; }
+@property --ng-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes ng-rot { to { --ng-a: 360deg; } }
+.ng-auth-heading h2 { margin: 0; font-size: 26px; } .ng-auth-heading h2 span { color: var(--ng-aqua); }
+.ng-auth-heading p { margin: 4px 0 16px; color: var(--ng-muted); font-size: 13px; }
+.ng-role-label { font-size: 12px; font-weight: 600; color: #c3d2e7; margin-bottom: 8px; }
+.ng-role-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.ng-role { position: relative; display: grid; justify-items: center; gap: 5px; padding: 10px 2px; border-radius: 12px; border: 1px solid var(--ng-line); background: rgba(255,255,255,.03); color: var(--ng-muted); cursor: pointer;
+  transition: transform .25s var(--ng-spring), border-color .25s, background .25s, color .25s, box-shadow .25s; }
+.ng-role strong { font-size: 11.5px; font-weight: 600; }
+.ng-role svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ng-spring); }
+.ng-role:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--ng-ring); color: #fff; } .ng-role:hover svg { transform: scale(1.12); }
+.ng-role.selected { color: #fff; border-color: var(--ng-aqua); background: var(--ng-soft); box-shadow: 0 0 0 1px var(--ng-ring), 0 6px 18px rgba(20,184,166,.22); }
+.ng-form { display: grid; gap: 12px; }
+.ng-field { position: relative; }
+.ng-field input { width: 100%; height: 54px; padding: 20px 46px 6px 14px; color: var(--ng-text); font: inherit; font-size: 14px; border-radius: 12px; border: 1px solid rgba(150,230,220,.24); background: rgba(8,14,30,.6); outline: none;
+  transition: border-color .25s, box-shadow .25s, background .25s; }
+.ng-field input:hover { border-color: rgba(45,212,191,.45); }
+.ng-field input:focus { border-color: var(--ng-aqua); background: rgba(10,22,36,.8); box-shadow: 0 0 0 4px var(--ng-soft); }
+.ng-field label { position: absolute; left: 15px; top: 17px; font-size: 14px; color: var(--ng-muted); pointer-events: none; transition: all .2s var(--ng-ease); }
+.ng-field input:focus + label, .ng-field input:not(:placeholder-shown) + label { top: 7px; font-size: 11px; color: var(--ng-aqua); letter-spacing: .3px; }
+.ng-eye { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 10px; border: 0; background: none; color: var(--ng-muted); display: grid; place-items: center; cursor: pointer; transition: background .2s, color .2s; }
+.ng-eye:hover { background: var(--ng-soft); color: #fff; }
+.ng-eye svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ng-form-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.ng-remember { display: flex; gap: 8px; align-items: center; color: #c3d2e7; cursor: pointer; } .ng-remember input { accent-color: var(--ng-teal); }
+.ng-form-row a { color: var(--ng-aqua); text-decoration: none; } .ng-form-row a:hover { text-decoration: underline; }
+.ng-error { padding: 10px 12px; border-radius: 10px; font-size: 13px; color: #ffc2cc; background: rgba(255,92,122,.12); border: 1px solid rgba(255,92,122,.35); }
+.ng-signin { position: relative; overflow: hidden; height: 50px; margin-top: 4px; border: 1px solid rgba(255,255,255,.18); border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--ng-grad); color: #04201d; font: inherit; font-size: 15px; font-weight: 700;
+  box-shadow: 0 6px 22px rgba(20,184,166,.4), inset 0 1px 0 rgba(255,255,255,.35); transition: transform .2s var(--ng-spring), box-shadow .25s; }
+.ng-signin:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(45,212,191,.4), 0 0 28px rgba(255,170,80,.35), inset 0 1px 0 rgba(255,255,255,.45); }
+.ng-signin:active:not(:disabled) { transform: scale(.97); }
+.ng-signin:disabled { opacity: .75; cursor: progress; }
+.ng-arrow { display: inline-block; transition: transform .3s var(--ng-spring); } .ng-signin:hover .ng-arrow { transform: translateX(4px); }
+.ng-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid #04201d; border-right-color: transparent; animation: ng-spin .7s linear infinite; }
+@keyframes ng-spin { to { transform: rotate(360deg); } }
+.ng-security { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--ng-line); font-size: 12px; color: var(--ng-muted); }
+.ng-security svg { width: 16px; height: 16px; fill: none; stroke: var(--ng-amber); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- responsive & motion ---------- */
+@media (max-width: 900px) {
+  .ng-photo-shade { background: linear-gradient(180deg, rgba(5,9,22,.82) 0%, rgba(5,9,22,.45) 38%, rgba(5,9,22,.15) 60%, rgba(5,9,22,.7) 100%); }
+  .ng-layout { align-content: start; gap: 28px; }
+  .ng-features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ng-support > span { display: none; }
+}
+/* Desktop window too narrow/short for the side-by-side card: Login.jsx drops the inline
+   placement and the card stacks under the hero, so keep it form-sized there. */
+@media (min-width: 901px) { .ng-card:not([style]) { max-width: 560px; margin-top: 28px; } }
+@media (max-width: 420px) { .ng-role-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ng-card { padding: 24px 18px; } }
+@media (prefers-reduced-motion: reduce) {
+  .ng-photo-img, .ng-headlight { transition: opacity .3s !important; } .ng-photo.driving .ng-photo-img { transform: none; } .ng-card::before { animation: none; }
+}
