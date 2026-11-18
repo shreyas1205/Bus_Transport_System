@@ -9,7 +9,7 @@ import { sendLastKnownLocationAlert } from '../services/locationAlerts.js';
 const router = express.Router();
 
 const STALE_SECONDS = Number(process.env.GPS_STALE_SECONDS || 90);
-const OFF_ROUTE_METERS = Number(process.env.ROUTE_DEVIATION_METERS || 350);
+const OFF_ROUTE_METERS = Number(process.env.ROUTE_DEVIATION_METERS || 500);
 const DEVIATION_COOLDOWN_MS = 15 * 60 * 1000;
 const INEVITABLE_DEVIATION_COOLDOWN_MS = 30 * 60 * 1000;
 const OVERSPEED_COOLDOWN_MS = 5 * 60 * 1000;

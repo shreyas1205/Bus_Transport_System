@@ -595,10 +595,10 @@ export default function LiveLocation() {
 
               {vehicles.map(vehicle => {
                 const stops = vehicle.routes?.[0]?.stops || [];
-                const line = stops.map(item => [
-                  item.stop.latitude,
-                  item.stop.longitude
-                ]);
+                // Draw the saved road path when there is one, otherwise straight lines between stops.
+                const line = Array.isArray(vehicle.routes?.[0]?.roadPath) && vehicle.routes[0].roadPath.length > 1
+                  ? vehicle.routes[0].roadPath
+                  : stops.map(item => [item.stop.latitude, item.stop.longitude]);
 
                 return (
                   <span key={`route-${vehicle.id}`}>

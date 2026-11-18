@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendEmail } from '../services/locationAlerts.js';
 import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
@@ -284,6 +285,27 @@ async function createParentJourneyNotification({
       isDropOff
         ? `${studentName} was safely dropped off from ${busLabel} at ${time}.`
         : `${studentName} boarded ${busLabel} at ${time}.`;
+
+    // Email the verified parents on boarding (not drop-off). Sent in the background so a
+    // mail failure never blocks the boarding scan.
+    if (!isDropOff) {
+      const parentUsers = await prisma.user.findMany({
+        where: { id: { in: verifiedParents.map(p => p.userId) } },
+        select: { email: true, name: true }
+      });
+      for (const parent of parentUsers) {
+        if (!parent.email) continue;
+        sendEmail(
+          parent.email,
+          `NaviGuard: ${studentName} boarded ${busLabel}`,
+          `Dear ${parent.name || 'Parent'},
+
+${message}
+
+— NaviGuard`
+        ).catch(err => console.error('PARENT BOARDING EMAIL ERROR:', err.message));
+      }
+    }
 
     await prisma.notification.createMany({
       data:
