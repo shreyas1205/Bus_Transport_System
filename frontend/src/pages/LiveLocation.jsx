@@ -2,7 +2,7 @@ import MapViewport from '../components/MapViewport';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { io } from 'socket.io-client';
+import { io } from '../socket.js';
 import {
   queueOfflineRequest,
   flushOfflineQueue
@@ -126,9 +126,7 @@ export default function LiveLocation() {
     refreshRef.current = refresh;
     refresh();
     const timer = setInterval(refresh, 30000);
-    const socket = io(
-      import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000'
-    );
+    const socket = io();
 
     socket.on('vehicle:location', refresh);
 
@@ -526,7 +524,7 @@ export default function LiveLocation() {
                     <div>
                       <span className="eyebrow">{route?.code || 'NO ROUTE'}</span>
                       <h3>
-                        Bus {vehicle.busNumber || '—'} <small>{vehicle.registrationNo}</small>
+                        {vehicle.busNumber ? <>Bus {vehicle.busNumber} <small>{vehicle.registrationNo}</small></> : vehicle.registrationNo}
                       </h3>
                     </div>
                     <span className={!track.active || !vehicle.lastLocationAt || track.stale ? 'chip warn' : 'chip good'}>
@@ -536,7 +534,7 @@ export default function LiveLocation() {
 
                   {track.stale && (
                     <div className="error">
-                      ⚠ Bus location unavailable or stale — last update {fmtAge(track.ageSeconds)}.
+                      ⚠ {track.ageSeconds == null ? 'No GPS update received from this bus yet.' : `Bus location is stale — last update ${fmtAge(track.ageSeconds)}.`}
                     </div>
                   )}
 
@@ -628,7 +626,7 @@ export default function LiveLocation() {
                   icon={busIcon}
                 >
                   <Popup>
-                    <b>Bus {vehicle.busNumber || '—'}</b><br />
+                    <b>{vehicle.busNumber ? `Bus ${vehicle.busNumber}` : vehicle.registrationNo}</b><br />
                     {vehicle.routes?.[0]?.name || 'No route'}<br />
                     Next: {vehicle.tracking?.nextStop?.name || '—'}<br />
                     ETA: {vehicle.tracking?.etaMinutes != null ? `${vehicle.tracking.etaMinutes} min (estimated)` : 'ETA unavailable'}<br />

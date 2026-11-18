@@ -1,5 +1,6 @@
 import { isDemoMode } from '../demoMode.js';
 import { prisma } from '../prisma.js';
+import { emitEmergencyUpdate } from '../security/socketAuth.js';
 
 const DEFAULT_RADIUS_METERS = Number(
   process.env.EMERGENCY_RESOURCE_RADIUS_METERS || 12000
@@ -21,6 +22,15 @@ const OVERPASS_URL =
 const LOOKUP_TIMEOUT_MS = Number(
   process.env.EMERGENCY_LOOKUP_TIMEOUT_MS || 7000
 );
+
+// Public Overpass servers often answer 429/502/504 when busy. Extra attempts
+// share the LOOKUP_TIMEOUT_MS budget, so retries never delay a dispatch longer.
+const LOOKUP_RETRIES = Math.max(
+  0,
+  Number(process.env.EMERGENCY_LOOKUP_RETRIES ?? 3) || 0
+);
+
+const LOOKUP_RETRY_BASE_MS = 1000;
 
 const DISPATCH_MODE = String(
   process.env.EMERGENCY_DISPATCH_MODE || 'demo'
@@ -182,27 +192,63 @@ out center tags;
   );
 
   try {
-    const body = new URLSearchParams({ data: query });
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const response = await fetch(OVERPASS_URL, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'user-agent': 'NaviGuard-College-Demo/1.0'
+          },
+          body: new URLSearchParams({ data: query }),
+          signal: controller.signal
+        });
 
-    const response = await fetch(OVERPASS_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'user-agent': 'NaviGuard-College-Demo/1.0'
-      },
-      body,
-      signal: controller.signal
-    });
+        if (!response.ok) {
+          const error = new Error(`Emergency resource lookup returned ${response.status}`);
+          error.retryable = response.status === 429 || response.status >= 500;
+          throw error;
+        }
 
-    if (!response.ok) {
-      throw new Error(`Emergency resource lookup returned ${response.status}`);
+        const data = await response.json();
+        return Array.isArray(data?.elements) ? data.elements : [];
+      } catch (error) {
+        // Our own timeout aborts the whole lookup; network errors (TypeError) and busy servers retry.
+        const retryable =
+          !controller.signal.aborted &&
+          (error.retryable || error instanceof TypeError);
+
+        if (!retryable || attempt >= LOOKUP_RETRIES) {
+          throw error;
+        }
+
+        const delay = LOOKUP_RETRY_BASE_MS * 2 ** attempt;
+        console.warn(
+          `Emergency resource lookup attempt ${attempt + 1} failed (${error.message}); retrying in ${delay}ms`
+        );
+        // If the budget runs out while waiting, report the server error, not the abort.
+        await waitOrAbort(delay, controller.signal).catch(() => {
+          throw error;
+        });
+      }
     }
-
-    const data = await response.json();
-    return Array.isArray(data?.elements) ? data.elements : [];
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function waitOrAbort(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true }
+    );
+  });
 }
 
 export async function findNearbyEmergencyResources(
@@ -708,7 +754,7 @@ export function scheduleDriverNonResponseEscalation({
         });
       }
 
-      io?.emit('accident:driver-unresponsive', updated);
+      emitEmergencyUpdate(io, 'accident:driver-unresponsive', updated);
       io?.emit('notification:update', { userIds: admins.map(admin => admin.id) });
     } catch (error) {
       console.error('Driver non-response escalation failed:', error);
@@ -1021,7 +1067,7 @@ export async function activateAutonomousEmergencyResponse({
       }
     });
 
-    io?.emit('accident:confirmed', activeIncident);
+    emitEmergencyUpdate(io, 'accident:confirmed', activeIncident);
   }
 
   const resources = await findNearbyEmergencyResources(
@@ -1104,14 +1150,14 @@ export async function activateAutonomousEmergencyResponse({
     packet
   });
 
-  io?.emit('accident:confirmed', updated);
-  io?.emit('emergency:autonomous-dispatch', {
+  emitEmergencyUpdate(io, 'accident:confirmed', updated);
+  emitEmergencyUpdate(io, 'emergency:autonomous-dispatch', updated, {
     incident: updated,
     resources,
     dispatch,
     parentsNotified,
     adminsNotified
-  });
+  }, true);
 
   return {
     activated: true,
@@ -1302,7 +1348,7 @@ async function detectGpsSuddenStopOnce({
       );
     });
   } else {
-    io?.emit('accident:possible', incident);
+    emitEmergencyUpdate(io, 'accident:possible', incident);
 
     try {
       const admins = await prisma.user.findMany({

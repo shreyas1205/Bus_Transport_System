@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import crypto from 'node:crypto';
 const read = f => fs.readFileSync(new URL('../src/'+f,import.meta.url),'utf8');
 const forbidden = () => { throw new Error('Unexpected database, network, transport or timer access'); };
 function load(file, demo=true, additions={}) {
  const handlers=new Map();
- const c=vm.createContext({process:{env:{NAVIGUARD_DEMO_MODE:String(demo),EMERGENCY_DISPATCH_MODE:'webhook',EMERGENCY_DISPATCH_WEBHOOK_URL:'https://example.invalid',COLLEGE_DIRECTORY_API_URL:'https://example.invalid',SMTP_HOST:'example.invalid',REPORT_EMAIL:'test@example.invalid'}},URL,URLSearchParams,AbortController,console,
+ const c=vm.createContext({process:{env:{NAVIGUARD_DEMO_MODE:String(demo),EMERGENCY_DISPATCH_MODE:'webhook',EMERGENCY_DISPATCH_WEBHOOK_URL:'https://example.invalid',COLLEGE_DIRECTORY_API_URL:'https://example.invalid',SMTP_HOST:'example.invalid',REPORT_EMAIL:'test@example.invalid'}},URL,URLSearchParams,AbortController,crypto,console,
  prisma:new Proxy({},{get:forbidden}),fetch:forbidden,setTimeout:forbidden,setInterval:forbidden,clearTimeout:forbidden,nodemailer:{createTransport:forbidden},
  auth:(q,s,n)=>q.user?n():s.status(401).json({}),allow:(...roles)=>(q,s,n)=>roles.includes(q.user.role)?n():s.status(403).json({}),requireVerifiedParentTransport:(q,s,n)=>n(),
  express:{Router:()=>Object.fromEntries(['get','post','patch','delete'].map(m=>[m,(p,...chain)=>handlers.set(m+' '+p,chain)]))},...additions});
@@ -41,7 +42,7 @@ for(const channel of ['sms','email'])await assert.rejects(otp.sendOtp({channel,d
 const {c:directory}=load('services/collegeDirectory.js');
 await assert.rejects(directory.findApiRecord('test'),/DEMO_MODE_BLOCKED/);
 const {c:fees,handlers:fh}=load('routes/fees.js');await fees.sendAutomaticFeeReminders();
-for(const path of ['/pay-demo','/admin/run-reminders','/:feeId/remind'])assert.equal((await call(fh,path,{}, {role:path==='/pay-demo'?'STUDENT':'ADMIN'})).data.code,'DEMO_MODE_BLOCKED');
+for(const path of ['/admin/run-reminders','/:feeId/remind'])assert.equal((await call(fh,path,{}, {role:'ADMIN'})).data.code,'DEMO_MODE_BLOCKED');
 const {handlers:ph}=load('routes/payments.js');
 for(const path of ['/create-order','/verify']){
  assert.equal((await call(ph,path,{},null)).code,401);assert.equal((await call(ph,path,{}, {role:'DRIVER'})).code,403);
@@ -71,3 +72,25 @@ const schema=fs.readFileSync(new URL('../prisma/schema.prisma',import.meta.url),
 const dispatchStatus=(await e.dispatchPacket({},{})).status;
 assert.ok(schema.match(/enum EmergencyDispatchStatus \{([^}]+)\}/)[1].includes(dispatchStatus));
 console.log('PASS: local coordinate route creation, normal-mode geocoding, schema-compatible demo dispatch.');
+
+const ordinaryPaymentDb={fee:{findUnique:async()=>{throw new Error('Payment database access must be blocked outside demo mode');}}};
+const {handlers: ordinaryFees}=load('routes/fees.js',false,{prisma:ordinaryPaymentDb,setTimeout:()=>0,setInterval:()=>0});
+const ordinaryResult=await call(ordinaryFees,'/pay-demo',{feeId:'fee-synthetic'},{id:'student-synthetic',role:'STUDENT'});
+assert.equal(ordinaryResult.code,403);
+assert.equal(ordinaryResult.data.code,'PAYMENT_VERIFICATION_REQUIRED');
+
+const isolatedStore={fee:{id:'fee-synthetic',userId:'student-synthetic',amount:100,status:'PENDING'},payments:[],passes:[]};
+const isolatedTransaction={
+  payment:{create:async({data})=>{const payment={id:'demo-payment',...data};isolatedStore.payments.push(payment);return payment;}},
+  fee:{update:async({data})=>Object.assign(isolatedStore.fee,data)},
+  user:{findUnique:async()=>({id:'student-synthetic',role:'STUDENT',assignedRouteId:'route-synthetic'})},
+  busPass:{findFirst:async()=>null,create:async({data})=>{isolatedStore.passes.push(data);return data;}}
+};
+const isolatedPaymentDb={fee:{findUnique:async()=>isolatedStore.fee},$transaction:async callback=>callback(isolatedTransaction)};
+const {handlers: demoFees}=load('routes/fees.js',true,{prisma:isolatedPaymentDb});
+const demoResult=await call(demoFees,'/pay-demo',{feeId:'fee-synthetic'},{id:'student-synthetic',role:'STUDENT'});
+assert.equal(demoResult.code,200);
+assert.match(demoResult.data.payment.gateway,/^SANDBOX_/);
+assert.equal(isolatedStore.fee.status,'PAID');
+assert.equal(isolatedStore.passes.length,1);
+console.log('PASS: synthetic payment blocked in normal mode and succeeds only in the isolated demo-mode fixture.');

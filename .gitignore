@@ -11,11 +11,3 @@ coverage/
 *.backup.js
 backend/backend/
 backend/frontend/
-
-# NaviGuard backups and temporary files
-*_BACKUP_*/
-_backup*/
-*.backup-*
-*.backup-*/
-backend/frontend-changes/
-backend/pending-frontend/

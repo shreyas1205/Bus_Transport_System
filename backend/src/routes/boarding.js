@@ -2,6 +2,7 @@ import express from 'express';
 import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
+import { verifiedParentStudent } from '../services/parentTransportAccess.js';
 import { auth, allow } from '../middleware.js';
 
 const router = express.Router();
@@ -239,7 +240,7 @@ async function createParentJourneyNotification({
   try {
     // Find all parent accounts linked
     // with this student.
-    const parents =
+    const linkedParents =
       await prisma.parentProfile.findMany({
         where: {
           studentId
@@ -251,9 +252,12 @@ async function createParentJourneyNotification({
         }
       });
 
-    if (
-      !parents.length
-    ) {
+    const parents = await Promise.all(linkedParents.map(async parent =>
+      await verifiedParentStudent(parent.userId) === studentId ? parent : null
+    ));
+    const verifiedParents = parents.filter(Boolean);
+
+    if (!verifiedParents.length) {
       return;
     }
 
@@ -283,7 +287,7 @@ async function createParentJourneyNotification({
 
     await prisma.notification.createMany({
       data:
-        parents.map(
+        verifiedParents.map(
           parent => ({
             userId:
               parent.userId,
@@ -301,7 +305,7 @@ async function createParentJourneyNotification({
 
     // Notify connected frontend clients.
     for (
-      const parent of parents
+      const parent of verifiedParents
     ) {
       io?.emit(
         'notification:update',
@@ -328,7 +332,7 @@ async function removeTodayBoardingNotifications(
   io
 ) {
   try {
-    const parents =
+    const linkedParents =
       await prisma.parentProfile.findMany({
         where: {
           studentId
@@ -340,14 +344,17 @@ async function removeTodayBoardingNotifications(
         }
       });
 
-    if (
-      !parents.length
-    ) {
+    const parents = await Promise.all(linkedParents.map(async parent =>
+      await verifiedParentStudent(parent.userId) === studentId ? parent : null
+    ));
+    const verifiedParents = parents.filter(Boolean);
+
+    if (!verifiedParents.length) {
       return;
     }
 
     const parentIds =
-      parents.map(
+        verifiedParents.map(
         parent =>
           parent.userId
       );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { io } from 'socket.io-client';
+import { io } from '../socket.js';
 
 export default function SOS() {
   const { user } = useAuth();
@@ -44,9 +44,7 @@ export default function SOS() {
   useEffect(() => {
     refresh();
 
-    const socket = io(
-      import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000'
-    );
+    const socket = io();
 
     const showFlash = () => {
       setFlash(true);
@@ -316,7 +314,7 @@ export default function SOS() {
                         <th>GPS</th>
                         <td>{incident.latitude ?? 'N/A'}, {incident.longitude ?? 'N/A'}</td>
                         <th>Dispatch</th>
-                        <td>{response?.dispatch?.mode === 'DEMO' ? 'DEMO / SIMULATED ? ' : ''}{incident.emergencyDispatchStatus}{!response?.dispatch ? ' ? dispatch not completed' : ''}</td>
+                        <td>{response?.dispatch?.mode === 'DEMO' ? 'DEMO / SIMULATED · ' : ''}{incident.emergencyDispatchStatus}{!response?.dispatch ? ' · dispatch not completed' : ''}</td>
                       </tr>
                       <tr>
                         <th>Police target</th>
@@ -389,8 +387,8 @@ export default function SOS() {
 
                 {mapUrl && (
                   <div style={{ marginTop: 12 }}>
-                    <a className="secondary" href={mapUrl} target="_blank" rel="noreferrer">
-                      VIEW LIVE / LAST KNOWN LOCATION
+                    <a className="secondary sos-map-link" href={mapUrl} target="_blank" rel="noreferrer">
+                      <span aria-hidden="true">📍</span> View live / last known location <span aria-hidden="true">↗</span>
                     </a>
                   </div>
                 )}

@@ -25,13 +25,11 @@ export default defineConfig(({ mode }) => {
           target,
           changeOrigin: true,
         },
-        ...(demo ? {
-          '/socket.io': {
-            target,
-            changeOrigin: true,
-            ws: true,
-          },
-        } : {}),
+        '/socket.io': {
+          target,
+          changeOrigin: true,
+          ws: true,
+        },
       },
     },
   };

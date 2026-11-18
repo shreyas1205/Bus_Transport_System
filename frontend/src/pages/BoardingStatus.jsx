@@ -5,7 +5,7 @@ import {
 
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { io } from 'socket.io-client';
+import { io } from '../socket.js';
 
 function formatTime(value) {
   if (!value) {
@@ -113,11 +113,7 @@ export default function BoardingStatus() {
   useEffect(() => {
     load();
 
-    const socket = io(
-      import.meta.env
-        .VITE_SOCKET_URL ||
-        'http://localhost:4000'
-    );
+    const socket = io();
 
     socket.on(
       'boarding:update',

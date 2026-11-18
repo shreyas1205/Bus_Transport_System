@@ -3,6 +3,7 @@ import crypto from 'crypto';
 
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
+import { publicUser, hashPassword, passwordProblem } from '../security/passwords.js';
 import { normalizeGuardianPhone, reconcileGuardianLinks } from '../services/autoLinkGuardians.js';
 
 import {
@@ -17,11 +18,7 @@ const router = express.Router();
 // PASSWORD HASH
 // ======================================================
 
-const hash = (text) =>
-  crypto
-    .createHash('sha256')
-    .update(text)
-    .digest('hex');
+// Passwords use the shared salted scrypt helper (security/passwords.js).
 
 
 // ======================================================
@@ -452,7 +449,7 @@ router.post(
                       .toLowerCase(),
 
                   passwordHash:
-                    hash(
+                    await hashPassword(
                       temporaryPassword
                     ),
 
@@ -670,7 +667,7 @@ router.get(
               true,
 
             studentProfile: { select: { guardianPhone: true } },
-            parentProfile: { select: { studentId: true } }
+            parentProfile: { select: { id: true, studentId: true, verifiedStudentId: true, verifiedAt: true } }
 
           },
 
@@ -804,29 +801,18 @@ router.post(
     // PASSWORD LENGTH
     // ----------------------------------------------
 
-    if (
-      String(password).length <
-      6
-    ) {
-
-      return res
-        .status(400)
-        .json({
-
-          message:
-            'Password must be at least 6 characters'
-
-        });
-
+    const passwordIssue = passwordProblem(String(password));
+    if (passwordIssue) {
+      return res.status(400).json({ message: passwordIssue });
     }
 
 
     const normalizedGuardian = normalizeGuardianPhone(guardianPhone);
     if (role === 'STUDENT' && guardianPhone && !normalizedGuardian) {
-      return res.status(400).json({message: 'Guardian phone must be a valid 10-digit Indian mobile number.'});
+      return res.status(400).json({message: 'Parent phone must be a valid 10-digit Indian mobile number.'});
     }
     if (role === 'PARENT' && !normalizeGuardianPhone(phone)) {
-      return res.status(400).json({message: 'A valid parent mobile number is needed for automatic guardian linking.'});
+      return res.status(400).json({message: 'A valid parent mobile number is needed for automatic parent linking.'});
     }
 
     try {
@@ -855,7 +841,7 @@ router.post(
                       .toLowerCase(),
 
                   passwordHash:
-                    hash(
+                    await hashPassword(
                       String(
                         password
                       )
@@ -1119,11 +1105,11 @@ router.patch('/:id/guardian-contact', auth, allow('ADMIN'), async (req, res) => 
       return { role:account.role, ...sync };
     });
     if (!result) return res.status(404).json({message:'Student or Parent account not found.'});
-    return res.json({message: result.linked ? 'Guardian contact saved and accounts linked automatically.' :
-      'Guardian contact saved. Waiting for a matching unique parent/student contact.', ...result});
+    return res.json({message: result.linked ? 'Parent contact saved and accounts linked automatically.' :
+      'Parent contact saved. Waiting for a matching unique parent/student contact.', ...result});
   } catch (error) {
     console.error('Guardian contact update error:', error);
-    return res.status(500).json({message:'Could not update guardian contact.'});
+    return res.status(500).json({message:'Could not update parent contact.'});
   }
 });
 
@@ -1312,7 +1298,7 @@ router.post(
       (record.role === 'STUDENT' && record.guardianPhone && !normalizeGuardianPhone(record.guardianPhone))
     );
     if (invalidPhone) {
-      return res.status(400).json({message: `Row ${invalidPhone.index + 1}: enter a valid parent / guardian mobile number.`});
+      return res.status(400).json({message: `Row ${invalidPhone.index + 1}: enter a valid parent mobile number.`});
     }
 
     try {
@@ -1553,7 +1539,7 @@ router.post(
                     email,
 
                     passwordHash:
-                      hash(
+                      await hashPassword(
                         password
                       ),
 
@@ -1707,6 +1693,8 @@ router.post(
 
           }
 
+        ,
+          { timeout: 120000, maxWait: 10000 }
         );
 
 
@@ -2094,9 +2082,7 @@ router.patch(
         });
 
 
-      res.json(
-        user
-      );
+      res.json(publicUser(user));
 
 
     } catch (error) {

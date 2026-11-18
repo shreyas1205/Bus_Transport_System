@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 
-const API = (
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:4000/api'
-).replace(/\/$/, '');
+import { API_URL } from '../api.js';
+
+const API = API_URL.replace(/\/$/, '');
 
 const field = {
   width: '100%',

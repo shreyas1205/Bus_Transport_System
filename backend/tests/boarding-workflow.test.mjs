@@ -30,7 +30,7 @@ const prisma={
 };
 let queue=Promise.resolve();
 prisma.$transaction=fn=>{const result=queue.then(()=>fn(prisma));queue=result.catch(()=>{});return result;};
-const context=vm.createContext({requireVerifiedParentTransport:(req,res,next)=>{req.verifiedStudentId='s1';return next();},prisma,crypto,Buffer,console,process:{env:{JWT_SECRET:'test-secret-'.repeat(4)}},express:{Router:()=>({get:(path,...f)=>handlers.set('GET '+path,f),post:(path,...f)=>handlers.set('POST '+path,f)})},auth:(req,res,next)=>next(),allow:(...roles)=>(req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({})});
+const context=vm.createContext({verifiedParentStudent:async id=>id==='parent'?'s1':null,requireVerifiedParentTransport:(req,res,next)=>{req.verifiedStudentId='s1';return next();},prisma,crypto,Buffer,console,process:{env:{JWT_SECRET:'test-secret-'.repeat(4)}},express:{Router:()=>({get:(path,...f)=>handlers.set('GET '+path,f),post:(path,...f)=>handlers.set('POST '+path,f)})},auth:(req,res,next)=>next(),allow:(...roles)=>(req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({})});
 function load(file){vm.runInContext(fs.readFileSync(new URL(file,import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'').replace('const router =','var router =').replace('export default router;',''),context);}
 load('../src/routes/passes.js');
 load('../src/routes/boarding.js');

@@ -23,3 +23,8 @@ export function blockDemoAction(req, res, next) {
   if (enabled) return res.status(403).json({code: 'DEMO_MODE_BLOCKED', message: 'This action is disabled in NaviGuard demo mode.'});
   return next();
 }
+
+export function allowDemoPayment(req, res, next) {
+  if (!enabled) return res.status(403).json({code: 'PAYMENT_VERIFICATION_REQUIRED', message: 'Sandbox payments are available only in the isolated demo database.'});
+  return next();
+}

@@ -5,6 +5,7 @@ import {
 } from 'react-router-dom';
 
 import { AuthProvider } from './auth';
+import Signup from './pages/Signup';
 
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
@@ -31,6 +32,9 @@ import Notifications from './pages/Notifications';
 
 import './styles.css';
 import './design-system.css';
+import './ui-polish.css';
+import { installMicroInteractions } from './interactions.js';
+installMicroInteractions();
 
 const all = [
   'ADMIN',
@@ -86,6 +90,11 @@ export default function App() {
           <Route
             path="/login"
             element={<Login />}
+          />
+
+          <Route
+            path="/signup"
+            element={<Signup />}
           />
 
           <Route

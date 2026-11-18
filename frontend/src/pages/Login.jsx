@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import './Login.css';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 import Reveal from '../components/Reveal';
@@ -261,113 +262,66 @@ export default function Login() {
   };
 
   return (
-    <div className="ref-login-page">
-
-      <div className="ref-login-overlay" />
+    <div className="ng-login">
+      <LoginBackdrop />
       {supportOpen && <SupportDialog onClose={() => setSupportOpen(false)} />}
 
-      <header className="ref-topbar">
-        <div className="ref-logo">
-          <div className="ref-logo-icon">
-            <BusIcon />
-          </div>
-
+      <header className="ng-top">
+        <div className="ng-logo">
+          <div className="ng-logo-icon"><BusIcon /></div>
           <div>
-            <strong>
-              Navi<span>Guard</span>
-            </strong>
+            <strong>Navi<span>Guard</span></strong>
             <small>Smart Campus Transport & Safety System</small>
           </div>
         </div>
-
-        <div className="ref-support">
+        <div className="ng-support">
           <span>Need help?</span>
-          <button type="button" className="support-link" onClick={() => setSupportOpen(true)}>Contact support</button>
+          <button type="button" className="secondary small" onClick={() => setSupportOpen(true)}>Contact support</button>
         </div>
       </header>
 
-      <main className="ref-login-layout">
-
-        {/* LEFT */}
-        <section className="ref-hero" id="home">
-          <Reveal className="ref-hero-copy" direction="up">
-            <div className="ref-kicker">
-              SAFE&nbsp;&nbsp;•&nbsp;&nbsp;SMART&nbsp;&nbsp;•&nbsp;&nbsp;CONNECTED
-            </div>
-
-            <h1>
-              Safe Rides.
-              <br />
-              <span>Brighter Futures.</span>
-            </h1>
-
-            <p>
-              Real-time tracking, smart boarding, and a safer
-              journey for every student. One connected campus.
-            </p>
+      <main className="ng-layout">
+        <section className="ng-hero" id="home">
+          <Reveal className="ng-hero-copy" direction="up">
+            <div className="ng-kicker">SAFE&nbsp;&nbsp;•&nbsp;&nbsp;SMART&nbsp;&nbsp;•&nbsp;&nbsp;CONNECTED</div>
+            <h1>Safe Rides.<br /><span>Brighter Futures.</span></h1>
+            <p>Real-time tracking, smart boarding, and a safer journey for every student. One connected campus.</p>
           </Reveal>
 
-          <div className="ref-features" id="features">
+          <div className="ng-features" id="features">
             {features.map((feature, index) => (
-              <Reveal
-                as="article"
-                className={`ref-feature ${feature.tone}`}
-                key={feature.title}
-                delay={100 + index * 80}
-                direction="up"
-              >
-                <div className="ref-feature-icon">
-                  {feature.icon}
-                </div>
-
+              <Reveal as="article" className={`ng-feature ${feature.tone}`} key={feature.title} delay={100 + index * 80} direction="up">
+                <div className="ng-feature-icon">{feature.icon}</div>
                 <strong>{feature.title}</strong>
                 <p>{feature.text}</p>
-
-                <span className="ref-feature-arrow">→</span>
+                <span className="ng-feature-arrow">→</span>
               </Reveal>
             ))}
           </div>
 
-          <Reveal as="blockquote" className="ref-quote" delay={220} direction="left">
+          <Reveal as="blockquote" className="ng-quote" delay={220} direction="left">
             <span />
             <div>
-              <p>
-                “More than transport,
-                <br />
-                a safer campus community.”
-              </p>
-
+              <p>“More than transport,<br />a safer campus community.”</p>
               <small>— NAVIGUARD TRANSPORT</small>
             </div>
           </Reveal>
         </section>
 
-        {/* RIGHT */}
-        <section className="ref-auth-wrap">
-          <Reveal className="ref-auth-card" delay={120} direction="right">
-
-            <div className="ref-auth-heading">
-              <h2>
-                Welcome <span>Back</span> 👋
-              </h2>
-
+        <section className="ng-auth-wrap">
+          <div className="ng-card" data-login-card>
+            <div className="ng-auth-heading">
+              <h2>Welcome <span>Back</span> 👋</h2>
               <p>Sign in to your NaviGuard account</p>
             </div>
 
-            <div className="ref-role-label">
-              Choose your role
-            </div>
-
-            <div className="ref-role-grid">
+            <div className="ng-role-label">Choose your role</div>
+            <div className="ng-role-grid">
               {roles.map((item) => (
                 <button
                   key={item.key}
                   type="button"
-                  className={
-                    role === item.key
-                      ? 'ref-role selected'
-                      : 'ref-role'
-                  }
+                  className={role === item.key ? 'ng-role selected' : 'ng-role'}
                   aria-pressed={role === item.key}
                   onClick={() => chooseRole(item)}
                   disabled={busy}
@@ -378,129 +332,160 @@ export default function Login() {
               ))}
             </div>
 
-            <form
-              className="ref-auth-form"
-              onSubmit={submit}
-            >
-              <label>
-                Email Address
+            <form className="ng-form" onSubmit={submit}>
+              <div className="ng-field">
+                <input
+                  id="ng-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder=" "
+                  autoComplete="username"
+                  disabled={busy}
+                  required
+                />
+                <label htmlFor="ng-email">Your college email</label>
+              </div>
 
-                <div className="ref-input">
-                  <span className="ref-input-symbol">@</span>
+              <div className="ng-field">
+                <input
+                  id="ng-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder=" "
+                  autoComplete="current-password"
+                  disabled={busy}
+                  required
+                />
+                <label htmlFor="ng-password">Enter your password</label>
+                <button
+                  type="button"
+                  className="ng-eye"
+                  onClick={() => setShowPassword((value) => !value)}
+                  disabled={busy}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  <EyeIcon open={showPassword} />
+                </button>
+              </div>
 
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) =>
-                      setEmail(event.target.value)
-                    }
-                    placeholder="Your college email"
-                    autoComplete="username"
-                    disabled={busy}
-                    required
-                  />
-                </div>
-              </label>
-
-              <label>
-                Password
-
-                <div className="ref-input">
-                  <span className="ref-input-symbol">▣</span>
-
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(event) =>
-                      setPassword(event.target.value)
-                    }
-                    placeholder="Enter your password"
-                    autoComplete="current-password"
-                    disabled={busy}
-                    required
-                  />
-
-                  <button
-                    type="button"
-                    className="ref-show-password"
-                    onClick={() =>
-                      setShowPassword((value) => !value)
-                    }
-                    disabled={busy}
-                    aria-label={
-                      showPassword
-                        ? 'Hide password'
-                        : 'Show password'
-                    }
-                    title={
-                      showPassword
-                        ? 'Hide password'
-                        : 'Show password'
-                    }
-                    aria-pressed={showPassword}
-                  >
-                    <EyeIcon open={showPassword} />
-                  </button>
-                </div>
-              </label>
-
-              <div className="ref-form-row">
-                <label className="ref-remember">
+              <div className="ng-form-row">
+                <label className="ng-remember">
                   <input
                     type="checkbox"
                     checked={remember}
-                    onChange={(event) =>
-                      setRemember(event.target.checked)
-                    }
+                    onChange={(event) => setRemember(event.target.checked)}
                     disabled={busy}
                   />
-
                   <span>Remember me</span>
                 </label>
-
-                <Link
-                  to="/forgot-password"
-                  onClick={(event) => {
-                    if (busy) event.preventDefault();
-                  }}
-                >
+                <Link to="/forgot-password" onClick={(event) => { if (busy) event.preventDefault(); }}>
                   Forgot Password?
                 </Link>
+                <Link to="/signup">Create an account</Link>
               </div>
 
-              {error && (
-                <div className="ref-error" role="alert">
-                  {error}
-                </div>
-              )}
+              {error && <div className="ng-error" role="alert">{error}</div>}
 
-              <button
-                type="submit"
-                className="ref-signin"
-                disabled={busy}
-              >
-                {busy ? (
-                  <>
-                    <span className="ref-spinner" />
-                    Signing In...
-                  </>
-                ) : (
-                  <>
-                    Sign In
-                    <span>→</span>
-                  </>
-                )}
+              <button type="submit" className="ng-signin" disabled={busy}>
+                {busy ? (<><span className="ng-spinner" />Signing In...</>) : (<>Sign In<span className="ng-arrow">→</span></>)}
               </button>
             </form>
 
-            <div className="ref-security">
+            <div className="ng-security">
               <ShieldIcon />
               <span>Your data is secure and protected</span>
             </div>
-          </Reveal>
+          </div>
         </section>
-
       </main>
     </div>
+  );
+}
+
+// Full-page real bus photo. Hovering (or press-and-hold on touch) the bus
+// pushes the camera in and lights the headlights. Purely visual.
+const PHOTO = { w: 1586, h: 992, bus: [0.255, 0.585, 0.6, 0.897], lights: [[0.482, 0.815], [0.588, 0.815]], oldCard: [0.612, 0.203, 0.968, 0.905] };
+
+function LoginBackdrop() {
+  const [driving, setDriving] = useState(false);
+  const [geo, setGeo] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const place = () => {
+      const W = window.innerWidth, H = window.innerHeight, mobile = W <= 900, px = mobile ? 0.42 : 0.5;
+      const sc = Math.max(W / PHOTO.w, H / PHOTO.h), dw = PHOTO.w * sc, dh = PHOTO.h * sc;
+      const ox = (W - dw) * px, oy = (H - dh) / 2;
+      const X = (f) => ox + f * dw, Y = (f) => oy + f * dh;
+      setGeo({ mobile, px, X, Y, dw, dh });
+      // Desktop: the sign-in card sits exactly over the area removed from the photo.
+      const card = document.querySelector('[data-login-card]');
+      if (card) {
+        if (mobile) card.removeAttribute('style');
+        else {
+          // Card fits its content and is centred on the area removed from the photo,
+          // kept inside the viewport when the photo is cropped at the sides.
+          const width = Math.min(520, (PHOTO.oldCard[2] - PHOTO.oldCard[0]) * dw);
+          const left = Math.min(X(PHOTO.oldCard[0]), W - width - 16);
+          Object.assign(card.style, { position: 'fixed', left: `${left}px`, width: `${width}px`, minHeight: '' });
+          // Line the card's top up with the hero's "SAFE • SMART • CONNECTED" line.
+          const kicker = document.querySelector('.ng-kicker');
+          const heroTop = kicker ? kicker.getBoundingClientRect().top + window.scrollY : (Y(PHOTO.oldCard[1]) + Y(PHOTO.oldCard[3])) / 2 - card.offsetHeight / 2;
+          const top = Math.min(Math.max(96, heroTop), Math.max(96, H - card.offsetHeight - 24));
+          card.style.top = `${top}px`;
+          // A fixed card cannot be scrolled to, so if it would overlap the hero or run
+          // past the bottom edge, fall back to the stacked (mobile) flow layout.
+          const heroRight = document.querySelector('.ng-hero')?.getBoundingClientRect().right ?? 0;
+          if (left < heroRight + 24 || top + card.offsetHeight > H - 8) card.removeAttribute('style');
+        }
+      }
+    };
+    place();
+    const settle = window.setTimeout(place, 900);
+    window.addEventListener('resize', place);
+    const up = () => setDriving(false);
+    window.addEventListener('pointerup', up);
+    return () => { window.clearTimeout(settle); window.removeEventListener('resize', place); window.removeEventListener('pointerup', up); };
+  }, []);
+
+  const [x0, y0, x1, y1] = PHOTO.bus;
+  return (
+    <>
+      <div className={driving ? 'ng-photo driving' : 'ng-photo'} aria-hidden="true">
+        <div
+          className="ng-photo-img"
+          style={geo ? { backgroundPosition: `${geo.px * 100}% 50%`, transformOrigin: `${geo.X(0.535)}px ${geo.Y(0.79)}px` } : undefined}
+        />
+        {geo && PHOTO.lights.map(([lx, ly]) => (
+          <span key={lx} className="ng-headlight" style={{ left: geo.X(lx), top: geo.Y(ly), width: 0.09 * geo.dw, height: 0.05 * geo.dw }} />
+        ))}
+        <div className="ng-photo-shade" />
+      </div>
+      {geo && (
+        <>
+          <div
+            className="ng-bus-spot"
+            role="button"
+            tabIndex={0}
+            aria-label="Bus: hover to drive"
+            style={{ left: geo.X(x0), top: geo.Y(y0), width: (x1 - x0) * geo.dw, height: (y1 - y0) * geo.dh }}
+            onPointerEnter={() => setDriving(true)}
+            onPointerLeave={() => setDriving(false)}
+            onPointerDown={(e) => { if (e.pointerType !== 'mouse') setDriving(true); }}
+            onFocus={() => setDriving(true)}
+            onBlur={() => setDriving(false)}
+          />
+          {!geo.mobile && (
+            <span className={driving ? 'ng-bus-hint gone' : 'ng-bus-hint'} style={{ left: geo.X((x0 + x1) / 2), top: Math.min(window.innerHeight - 44, geo.Y(y1) + 8) }}>
+              Hover the bus
+            </span>
+          )}
+        </>
+      )}
+    </>
   );
 }

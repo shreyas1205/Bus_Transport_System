@@ -33,9 +33,16 @@ router.get(
   requireVerifiedParentTransport,
   async (req, res) => {
     let where = {};
-    if (req.user.role === 'PARENT') {
-      const student = await prisma.user.findUnique({ where: { id: req.verifiedStudentId }, select: { assignedRoute: { select: { assignedBusId: true } } } });
-      where = { id: { in: student?.assignedRoute?.assignedBusId ? [student.assignedRoute.assignedBusId] : [] } };
+    if (req.user.role === 'PARENT' || req.user.role === 'STUDENT' || req.user.role === 'STAFF') {
+      // Riders only see the bus on their own (or verified child's) route.
+      const riderId = req.user.role === 'PARENT' ? req.verifiedStudentId : req.user.id;
+      const rider = await prisma.user.findUnique({ where: { id: riderId }, select: { assignedRoute: { select: { assignedBusId: true } } } });
+      where = { id: { in: rider?.assignedRoute?.assignedBusId ? [rider.assignedRoute.assignedBusId] : [] } };
+    } else if (req.user.role === 'DRIVER') {
+      const routes = await prisma.route.findMany({ where: { assignedDriverId: req.user.id, isActive: true }, select: { assignedBusId: true } });
+      where = { id: { in: routes.map(r => r.assignedBusId).filter(Boolean) } };
+    } else if (req.user.role !== 'ADMIN') {
+      where = { id: { in: [] } };
     }
     res.json(
       await prisma.vehicle.findMany({
@@ -76,6 +83,13 @@ router.post(
         message:
           'Registration number, model and capacity are required'
       });
+    }
+
+    if (!Number.isInteger(Number(capacity)) || Number(capacity) < 1 || Number(capacity) > 200) {
+      return res.status(400).json({ message: 'Capacity must be a whole number between 1 and 200.' });
+    }
+    if (!Number.isFinite(Number(odometerKm)) || Number(odometerKm) < 0) {
+      return res.status(400).json({ message: 'Odometer must be zero or more.' });
     }
 
     if (!vehicleStatuses.includes(String(status).toUpperCase())) return res.status(400).json({ message: 'Invalid bus status.' });
@@ -154,6 +168,9 @@ router.patch(
       }
     }
 
+    if (req.body?.capacity !== undefined && (!Number.isInteger(Number(req.body.capacity)) || Number(req.body.capacity) < 1 || Number(req.body.capacity) > 200)) {
+      return res.status(400).json({ message: 'Capacity must be a whole number between 1 and 200.' });
+    }
     if (req.body?.capacity !== undefined) {
       data.capacity =
         Number(req.body.capacity);

@@ -3,6 +3,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { prisma } from '../prisma.js';
 import { auth, allow } from '../middleware.js';
+import { verifiedParentStudent } from '../services/parentTransportAccess.js';
 
 const router = express.Router();
 
@@ -34,11 +35,7 @@ async function ensureBusPass(tx, studentId) {
 
 async function feeOwnerIdFor(user) {
   if (user.role !== 'PARENT') return user.id;
-  const parent = await prisma.parentProfile.findUnique({
-    where:{ userId:user.id },
-    select:{ studentId:true },
-  });
-  return parent?.studentId || null;
+  return verifiedParentStudent(user.id);
 }
 
 router.post('/create-order', auth, allow('STUDENT','STAFF','PARENT'), blockDemoAction, async (req,res)=>{
@@ -98,14 +95,44 @@ router.post('/verify', auth, allow('STUDENT','STAFF','PARENT'), blockDemoAction,
     return res.status(400).json({message:'Payment verification failed.'});
   }
 
+  // Claim the fee atomically: only the first genuine payment can mark it PAID.
+  // A second captured payment for the same fee (e.g. two browser tabs) is kept as a
+  // duplicate needing a refund instead of silently recording a double payment.
+  let outcome = 'PAID';
   await prisma.$transaction(async tx => {
+    const claimedPayment = await tx.payment.updateMany({
+      where:{id:payment.id,status:'PENDING'},
+      data:{status:'FAILED',gatewayPaymentId:razorpay_payment_id},
+    });
+    if (!claimedPayment.count) { outcome = 'ALREADY_PROCESSED'; return; }
+    const claimedFee = await tx.fee.updateMany({
+      where:{id:payment.feeId,status:{not:'PAID'}},
+      data:{status:'PAID'},
+    });
+    if (!claimedFee.count) {
+      outcome = 'DUPLICATE';
+      await tx.payment.update({
+        where:{id:payment.id},
+        data:{refundReason:'DUPLICATE PAYMENT: fee was already paid. Refund this payment in the Razorpay dashboard.'},
+      });
+      return;
+    }
     await tx.payment.update({
       where:{id:payment.id},
-      data:{status:'PAID',paidAt:new Date(),gatewayPaymentId:razorpay_payment_id},
+      data:{status:'PAID',paidAt:new Date()},
     });
-    const fee = await tx.fee.update({where:{id:payment.feeId},data:{status:'PAID'}});
+    const fee = await tx.fee.findUnique({where:{id:payment.feeId}});
     await ensureBusPass(tx, fee.userId);
   });
+  if (outcome === 'ALREADY_PROCESSED') return res.status(400).json({message:'Invalid payment.'});
+  if (outcome === 'DUPLICATE') {
+    const admins = await prisma.user.findMany({where:{role:'ADMIN'},select:{id:true}});
+    if (admins.length) await prisma.notification.createMany({data:admins.map(a=>({
+      userId:a.id,type:'GENERAL',title:'Duplicate payment needs refund',
+      message:`Payment ${razorpay_payment_id} (₹${Number(payment.amount).toLocaleString('en-IN')}) was made for a fee that was already paid. Refund it in the Razorpay dashboard.`,
+    }))});
+    return res.status(409).json({duplicate:true,message:'This fee was already paid. Your second payment has been flagged and will be refunded.'});
+  }
   res.json({message:'Payment verified successfully.'});
 });
 
@@ -118,7 +145,7 @@ router.get('/:paymentId/receipt', auth, allow('STUDENT','STAFF','PARENT','ADMIN'
 
   if (req.user.role !== 'ADMIN') {
     const ownerId = await feeOwnerIdFor(req.user);
-    if (payment.fee.userId !== ownerId && payment.userId !== req.user.id) {
+    if (payment.fee.userId !== ownerId) {
       return res.status(403).json({message:'Not allowed.'});
     }
   }

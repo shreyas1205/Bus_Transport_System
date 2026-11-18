@@ -1,3 +1,4 @@
+import { refreshRoadPath } from '../services/roadPath.js';
 import { isDemoMode } from '../demoMode.js';
 import express from 'express';
 import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
@@ -652,6 +653,143 @@ router.post('/:id/reassign', auth, allow('ADMIN'), async (req, res) => {
     prisma.routeChange.create({ data: { routeId: route.id, reason, fromBusId: route.assignedBusId, toBusId: busId || null, fromDriverId: route.assignedDriverId, toDriverId: driverId || null } })
   ]);
   res.json({ message: 'Route dynamically reassigned' });
+});
+
+// ADMIN: edit route name, code, description, safety limits and the ordered stop list.
+// Existing stops are updated in place (keeps fee and enrollment history). Removing a
+// pickup point only unlinks it from this route, and is blocked while students are enrolled there.
+router.patch('/:id/details', auth, allow('ADMIN'), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({
+      where: { id: req.params.id },
+      include: { stops: { include: { stop: true } } },
+    });
+    if (!route) return res.status(404).json({ message: 'Route not found' });
+
+    const body = req.body || {};
+    const data = {};
+
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (!name) return res.status(400).json({ message: 'Route name cannot be empty.' });
+      data.name = name;
+    }
+    if (body.code !== undefined) {
+      const code = String(body.code).trim();
+      if (!code) return res.status(400).json({ message: 'Route code cannot be empty.' });
+      if (code !== route.code && await prisma.route.findUnique({ where: { code } })) {
+        return res.status(409).json({ message: 'Another route already uses this code.' });
+      }
+      data.code = code;
+    }
+    if (body.description !== undefined) {
+      data.description = String(body.description || '').trim() || null;
+    }
+    if (body.speedLimitKmph !== undefined) {
+      const v = Number(body.speedLimitKmph);
+      if (!Number.isFinite(v) || v < 10 || v > 120) return res.status(400).json({ message: 'Speed limit must be between 10 and 120 km/h.' });
+      data.speedLimitKmph = v;
+    }
+    if (body.arrivalAlertMinutes !== undefined) {
+      const v = Math.round(Number(body.arrivalAlertMinutes));
+      if (!Number.isFinite(v) || v < 1 || v > 30) return res.status(400).json({ message: 'Arrival alert must be between 1 and 30 minutes.' });
+      data.arrivalAlertMinutes = v;
+    }
+
+    let stopPlan = null;
+    if (body.stops !== undefined) {
+      if (!Array.isArray(body.stops) || !body.stops.length) {
+        return res.status(400).json({ message: 'A route needs at least one pickup point.' });
+      }
+      const existingById = new Map(route.stops.map(rs => [rs.id, rs]));
+      const keptIds = new Set();
+      stopPlan = body.stops.map((s, index) => {
+        const label = `Pickup point ${index + 1}`;
+        const name = String(s.name || '').trim();
+        if (!name) throw new Error(`${label} needs a name.`);
+        if (!/^\d{2}:\d{2}$/.test(String(s.plannedEta || ''))) throw new Error(`${label} needs an arrival time (HH:MM).`);
+        const fee = Number(s.transportFee || 0);
+        if (!Number.isFinite(fee) || fee < 0) throw new Error(`${label} fee must be 0 or more.`);
+        const lat = s.latitude === '' || s.latitude == null ? null : Number(s.latitude);
+        const lng = s.longitude === '' || s.longitude == null ? null : Number(s.longitude);
+        const hasCoords = lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+        if (s.routeStopId) {
+          const existing = existingById.get(s.routeStopId);
+          if (!existing) throw new Error(`${label} does not belong to this route.`);
+          keptIds.add(existing.id);
+          return { kind: 'update', existing, name, fee, plannedEta: s.plannedEta, sequence: index + 1,
+            lat: hasCoords ? lat : null, lng: hasCoords ? lng : null };
+        }
+        if (!hasCoords) throw new Error(`${label} needs valid latitude and longitude.`);
+        return { kind: 'create', name, fee, plannedEta: s.plannedEta, sequence: index + 1, lat, lng };
+      });
+
+      const removed = route.stops.filter(rs => !keptIds.has(rs.id));
+      for (const rs of removed) {
+        const enrolled = await prisma.transportEnrollment.count({ where: { routeId: route.id, stopId: rs.stopId } });
+        if (enrolled > 0) {
+          return res.status(409).json({ message: `Students are enrolled at "${rs.stop.name}". Move them to another pickup point before removing it.` });
+        }
+      }
+      stopPlan.removed = removed;
+    }
+
+    await prisma.$transaction(async tx => {
+      if (stopPlan) {
+        for (const rs of stopPlan.removed) {
+          await tx.routeStop.delete({ where: { id: rs.id } });
+        }
+        // Two passes so sequence numbers never collide with the unique (routeId, sequence) index.
+        for (const item of stopPlan) {
+          if (item.kind === 'update') {
+            await tx.routeStop.update({ where: { id: item.existing.id }, data: { sequence: 1000 + item.sequence } });
+          }
+        }
+        for (const item of stopPlan) {
+          if (item.kind === 'update') {
+            const stopData = { name: item.name, transportFee: item.fee, feeAmount: item.fee, locationText: item.name };
+            if (item.lat != null) {
+              stopData.latitude = item.lat;
+              stopData.longitude = item.lng;
+            }
+            await tx.stop.update({ where: { id: item.existing.stopId }, data: stopData });
+            await tx.routeStop.update({ where: { id: item.existing.id }, data: { sequence: item.sequence, plannedEta: item.plannedEta } });
+          } else {
+            const stop = await tx.stop.create({ data: {
+              name: item.name, locationText: item.name,
+              googleMapsUrl: `https://www.google.com/maps?q=${item.lat},${item.lng}`,
+              latitude: item.lat, longitude: item.lng, geofenceM: 150,
+              transportFee: item.fee, feeAmount: item.fee,
+            } });
+            await tx.routeStop.create({ data: { routeId: route.id, stopId: stop.id, sequence: item.sequence, plannedEta: item.plannedEta } });
+          }
+        }
+      }
+      if (Object.keys(data).length) {
+        await tx.route.update({ where: { id: route.id }, data });
+      }
+    });
+
+    const updated = await prisma.route.findUnique({
+      where: { id: route.id },
+      include: { stops: { include: { stop: true }, orderBy: { sequence: 'asc' } }, assignedBus: true, assignedDriver: true },
+    });
+    // Refresh the road-following path when stops changed. Failure must not block the save.
+    if (stopPlan) refreshRoadPath(prisma, route.id).catch(err => console.error('Road path refresh failed:', err.message));
+    res.json(updated);
+  } catch (error) {
+    res.status(400).json({ message: error.message || 'Could not update route' });
+  }
+});
+
+// ADMIN: refresh the road-following path for a route (also runs after stop edits).
+router.post('/:id/road-path', auth, allow('ADMIN'), async (req, res) => {
+  try {
+    const path = await refreshRoadPath(prisma, req.params.id);
+    res.json({ points: path?.length || 0, message: 'Road path saved.' });
+  } catch (error) {
+    res.status(502).json({ message: 'Could not fetch the road path: ' + error.message });
+  }
 });
 
 export default router;

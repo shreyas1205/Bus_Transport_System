@@ -14,7 +14,7 @@ import { api } from '../api';
 
 import { useAuth } from '../auth';
 
-import { io } from 'socket.io-client';
+import { io } from '../socket.js';
 import { Html5Qrcode } from 'html5-qrcode';
 import { queueOfflineRequest } from '../offlineQueue';
 
@@ -298,9 +298,11 @@ function escapeCsvValue(value) {
 
 
 
+  // Neutralise spreadsheet formulas (=, +, -, @, tab, CR) before quoting.
+  const raw = String(value);
   const text =
 
-    String(value)
+    (/^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw)
 
       .replace(/"/g, '""');
 
@@ -2061,15 +2063,7 @@ export default function Boarding() {
 
 
 
-    const socket = io(
-
-      import.meta.env
-
-        .VITE_SOCKET_URL ||
-
-        'http\://localhost:4000'
-
-    );
+    const socket = io();
 
 
 
@@ -3068,7 +3062,7 @@ export default function Boarding() {
 
             <section className="boarding-stat-card">
 
-              <span className="boarding-stat-icon">Î£</span>
+              <span className="boarding-stat-icon">Σ</span>
 
               <small>TOTAL STUDENTS</small>
 

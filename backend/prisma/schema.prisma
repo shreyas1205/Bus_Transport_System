@@ -110,6 +110,7 @@ model User {
   pickupStopId             String?
   passwordVersion          Int       @default(0)
   passwordResetRequestedAt DateTime?
+  approvalStatus           String    @default("APPROVED")
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
@@ -168,11 +169,24 @@ model DriverProfile {
 }
 
 model ParentProfile {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  studentId String?
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  studentId         String?
+  verifiedStudentId String?
+  verifiedAt        DateTime?
+  verifiedBy        String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ParentLinkOtp {
+  id        String   @id @default(cuid())
+  parentId  String   @unique
+  studentId String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model Route {
@@ -185,6 +199,7 @@ model Route {
   isActive            Boolean  @default(true)
   assignedBusId       String?
   assignedDriverId    String?
+  roadPath            Json?
   createdAt           DateTime @default(now())
 
   assignedBus          Vehicle?              @relation(fields: [assignedBusId], references: [id])

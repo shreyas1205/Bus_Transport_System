@@ -19,7 +19,7 @@ const prisma = {
  route: { findMany: async () => [{id:'route',code:'R1'}] },
  notification: {createMany: async ({data}) => notifications.push(...data)}
 };
-const context = vm.createContext({ isDemoMode: () => demo, prisma, process:{env:{}}, console, URLSearchParams, AbortController,
+const context = vm.createContext({ emitEmergencyUpdate: (io, event, incident, payload = incident) => io?.emit?.(event, payload), isDemoMode: () => demo, prisma, process:{env:{}}, console, URLSearchParams, AbortController,
  setTimeout: () => 1, clearTimeout: () => {},
  fetch: async () => { assert.equal(demo, false, 'No emergency HTTP in demo mode'); return ({ok:true,json:async()=>({elements:[
  {type:'node',id:1,lat:12.001,lon:77,tags:{amenity:'hospital',name:'Nearest'}},

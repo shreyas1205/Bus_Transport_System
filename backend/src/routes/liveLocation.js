@@ -1,8 +1,10 @@
 import express from 'express';
 import { requireVerifiedParentTransport } from '../services/parentTransportAccess.js';
 import { prisma } from '../prisma.js';
+import { verifiedParentStudent } from '../services/parentTransportAccess.js';
 import { auth, allow } from '../middleware.js';
 import { detectGpsSuddenStop } from '../services/emergencyResponse.js';
+import { sendLastKnownLocationAlert } from '../services/locationAlerts.js';
 
 const router = express.Router();
 
@@ -93,7 +95,11 @@ function pointSegmentDistanceM(point, a, b) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-function routeDistanceM(point, stops) {
+function routeDistanceM(point, stops, roadPath) {
+  if (Array.isArray(roadPath) && roadPath.length >= 2) {
+    const pts = roadPath.map(([latitude, longitude]) => ({ latitude, longitude }));
+    return Math.min(...pts.slice(0, -1).map((a, i) => pointSegmentDistanceM(point, a, pts[i + 1])));
+  }
   if (!stops.length) return null;
 
   if (stops.length === 1) {
@@ -189,7 +195,7 @@ function tracking(route, vehicle) {
   const etaMinutes = next && etaSpeed > 0
     ? Math.max(1, Math.round((next.distanceM / 1000 / etaSpeed) * 60))
     : null;
-  const distanceFromRoute = routeDistanceM(point, stops);
+  const distanceFromRoute = routeDistanceM(point, stops, route?.roadPath);
 
   return {
     active,
@@ -297,7 +303,7 @@ async function parentUsersForStudents(students) {
 
   if (!ids.length) return [];
 
-  return prisma.user.findMany({
+  const parents = await prisma.user.findMany({
     where: {
       role: 'PARENT',
       parentProfile: {
@@ -311,6 +317,10 @@ async function parentUsersForStudents(students) {
       parentProfile: { select: { studentId: true } }
     }
   });
+  const verifiedParents = await Promise.all(parents.map(async parent =>
+    await verifiedParentStudent(parent.id) === parent.parentProfile?.studentId ? parent : null
+  ));
+  return verifiedParents.filter(Boolean);
 }
 
 async function createDedupedNotification({
@@ -377,6 +387,7 @@ async function deviationAlert(route, vehicle, distanceM, io) {
     });
   }
 
+  void sendLastKnownLocationAlert({ reason: 'ROUTE_DEVIATION', vehicleId: vehicle.id, routeId: route.id, extraDetail: { distanceM } });
   io?.emit('route:deviation', {
     routeId: route.id,
     vehicleId: vehicle.id,
@@ -685,7 +696,12 @@ async function missedBoardingForStop(route, vehicle, stopId, io) {
     io?.emit('notification:update', {
       userIds: [...notificationUserIds]
     });
-    io?.emit('boarding:missed', {
+    // Student names go only to admins, the route driver and notified parents.
+    const missedTarget = io?.to
+      ? [...notificationUserIds, ...(route.assignedDriverId ? [route.assignedDriverId] : [])]
+          .reduce((room, id) => room.to(`user:${id}`), io.to('role:ADMIN'))
+      : io;
+    missedTarget?.emit('boarding:missed', {
       routeId: route.id,
       vehicleId: vehicle.id,
       stopId,
@@ -790,14 +806,17 @@ router.get(
                 id: true,
                 name: true,
                 phone: true,
-                driverProfile: {
-                  select: {
-                    licenseNumber: true,
-                    licenseExpiry: true,
-                    licensePhoto: true,
-                    licenseStatus: true
+                // License details are operational data: Admin/Driver only.
+                ...(['ADMIN', 'DRIVER'].includes(req.user.role) ? {
+                  driverProfile: {
+                    select: {
+                      licenseNumber: true,
+                      licenseExpiry: true,
+                      licensePhoto: true,
+                      licenseStatus: true
+                    }
                   }
-                }
+                } : {})
               }
             }
           }
@@ -815,16 +834,8 @@ router.get(
       if (!route) continue;
       const trackingInfo = tracking(route, vehicle);
 
-      if (route && trackingInfo.offRoute) {
-        deviationAlert(route, vehicle, trackingInfo.distanceFromRouteM, io).catch(
-          () => {}
-        );
-      }
-
-      if (route && trackingInfo.overspeed) {
-        overspeedAlert(route, vehicle, trackingInfo, io).catch(() => {});
-      }
-
+      // Deviation/overspeed alerts are raised by the driver's GPS POST.
+      // Only stale-GPS needs detection here, because a stale bus sends nothing.
       if (trackingInfo.active && trackingInfo.stale) {
         staleGpsAlert(route, vehicle, trackingInfo, io).catch(() => {});
       }
@@ -1100,15 +1111,21 @@ router.post('/update', auth, allow('DRIVER'), async (req, res) => {
 
   const captured = Date.parse(req.body.recordedAt);
   const accuracy = req.body.accuracy;
-  if (!Number.isFinite(captured) || captured > Date.now() + 10000 || Date.now() - captured > STALE_SECONDS * 1000 || captured < Date.parse(session.startedAt) || (session.lastGps && captured <= Date.parse(session.lastGps.recordedAt))) {
+  if (!Number.isFinite(captured) || captured > Date.now() + 10000 || Date.now() - captured > STALE_SECONDS * 1000 || captured < Date.parse(session.startedAt) || (session.lastGps && captured <= Date.parse(session.lastGps.recordedAt)) || (Number.isFinite(session.gpsClaimedAt) && captured <= session.gpsClaimedAt)) {
     return res.status(400).json({ message: 'A fresh GPS timestamp from the current trip is required.' });
   }
   if (typeof accuracy !== 'number' || !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 100) {
     return res.status(400).json({ message: 'GPS accuracy is insufficient. Waiting for a reliable position.' });
   }
   if (!session.active || tripSessions.get(req.user.id) !== session) return res.status(409).json({ message: 'Trip has ended.' });
+  // Claim this timestamp before any await so concurrent duplicates/older
+  // samples are rejected instead of producing two writes.
+  const previousClaim = session.gpsClaimedAt;
+  session.gpsClaimedAt = captured;
   const recordedAt = new Date(captured);
-  const [vehicle] = await prisma.$transaction([
+  let vehicle;
+  try {
+  [vehicle] = await prisma.$transaction([
     prisma.vehicle.update({
       where: { id: route.assignedBusId },
       data: { latitude, longitude, speedKmph }
@@ -1123,6 +1140,10 @@ router.post('/update', auth, allow('DRIVER'), async (req, res) => {
       }
     })
   ]);
+  } catch (error) {
+    if (session.gpsClaimedAt === captured) session.gpsClaimedAt = previousClaim;
+    throw error;
+  }
 
   session.lastGps = { latitude, longitude, accuracy, recordedAt: recordedAt.toISOString() };
   const trackingInfo = tracking(route, {

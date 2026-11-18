@@ -8,7 +8,7 @@ const prisma={complaint:{findUnique:async()=>({...record}),update:async({data})=
 const context=vm.createContext({prisma,express:{Router:()=>Object.fromEntries(['get','post','patch'].map(method=>[method,(path,...chain)=>handlers.set(method+path,chain)]))},auth:(req,res,next)=>next(),allow:()=> (req,res,next)=>next()});
 vm.runInContext(readFileSync(new URL('../src/routes/complaints.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'').replace('export default router;',''),context);
 async function call(method,path,body={},role='ADMIN') {
- const req={body,params:{id:'c1'},user:{id:'student',role},app:{get:()=>({emit:(...args)=>emitted.push(args)})}};
+ const req={body,params:{id:'c1'},user:{id:'student',role},app:{get:()=>{const rooms=[];const room={to(r){rooms.push(r);return room;},emit:(...args)=>emitted.push([...args,[...rooms]])};return {to:r=>room.to(r)};}}};
  const res={code:200,status(code){this.code=code;return this;},json(data){this.data=data;return this;}};
  await handlers.get(method+path).at(-1)(req,res);return res;
 }
@@ -19,6 +19,7 @@ assert.equal((await call('get','/')).data[0].adminResponse,'Timing corrected');
 assert.equal((await call('get','/',{},'STUDENT')).data[0].adminResponse,'Timing corrected');
 assert.ok(record.resolvedAt);
 assert.equal(emitted.at(-1)[0],'complaint:update');
+assert.deepEqual(emitted.at(-1).at(-1),['role:ADMIN','user:student'],'complaint events are scoped to admins and the owner');
 await call('patch','/:id/status',{status:'OPEN'});
 assert.equal(record.adminResponse,'Timing corrected'); assert.equal(record.resolvedAt,null);
 assert.equal((await call('patch','/:id/status',{status:'INVALID',adminResponse:'Must not save'})).code,400);

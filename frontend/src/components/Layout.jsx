@@ -16,7 +16,7 @@ import {
 
 import { useAuth } from '../auth';
 import { api } from '../api';
-import { io } from 'socket.io-client';
+import { io } from '../socket.js';
 import { flushOfflineQueue, getOfflineQueueCount } from '../offlineQueue';
 
 const nav = [
@@ -371,11 +371,7 @@ function ArrivalNotificationManager({
       );
 
     const socket =
-      io(
-        import.meta.env
-          .VITE_SOCKET_URL ||
-          'http://localhost:4000'
-      );
+      io();
 
     socket.on(
       'vehicle:location',
@@ -665,9 +661,7 @@ export default function Layout() {
       return undefined;
     }
 
-    const socket = io(
-      import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000'
-    );
+    const socket = io();
 
     const belongsToDriver = incident =>
       !incident?.driverId || incident.driverId === user.id;
@@ -868,11 +862,7 @@ export default function Layout() {
       );
 
     const socket =
-      io(
-        import.meta.env
-          .VITE_SOCKET_URL ||
-          'http://localhost:4000'
-      );
+      io();
 
     const handleNotification =
       payload => {

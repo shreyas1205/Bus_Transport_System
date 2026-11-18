@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { io } from 'socket.io-client';
+import { io } from '../socket.js';
 import './Complaints.css';
 
 const categories = [
@@ -60,7 +60,7 @@ export default function Complaints() {
 
   useEffect(() => {
     load();
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000');
+    const socket = io();
     const refresh = () => load();
     socket.on('complaint:new', refresh);
     socket.on('complaint:update', refresh);
@@ -178,7 +178,7 @@ export default function Complaints() {
         <div className="panel-head complaints-panel-head">
           <div>
             <h3>{isAdmin ? 'All complaints' : 'My complaints'}</h3>
-            <p>{isAdmin ? `${filtered.length} of ${complaints.length} complaints ? Newest first` : 'Your submitted issues and Admin responses.'}</p>
+            <p>{isAdmin ? `${filtered.length} of ${complaints.length} complaints · Newest first` : 'Your submitted issues and Admin responses.'}</p>
           </div>
           {isAdmin && (
             <div className="complaint-tools">
@@ -236,7 +236,7 @@ function ComplaintCard({ complaint, isAdmin, saving, busy, onSave }) {
         </div>
         <StatusChip status={complaint.status} />
       </div>
-      {isAdmin && <div className="complaint-student"><span className="complaint-avatar" aria-hidden="true">{studentName.slice(0, 1).toUpperCase()}</span><div><strong>{studentName}</strong><span>{[complaint.user?.institutionId, complaint.user?.email].filter(Boolean).join(' ? ') || 'Passenger'}</span></div></div>}
+      {isAdmin && <div className="complaint-student"><span className="complaint-avatar" aria-hidden="true">{studentName.slice(0, 1).toUpperCase()}</span><div><strong>{studentName}</strong><span>{[complaint.user?.institutionId, complaint.user?.email].filter(Boolean).join(' · ') || 'Passenger'}</span></div></div>}
       <p className="complaint-description">{complaint.description}</p>
 
       {complaint.adminResponse && !isAdmin && (

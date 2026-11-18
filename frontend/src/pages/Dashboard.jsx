@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import {api} from '../api';
 import {useAuth} from '../auth';
-import {io} from 'socket.io-client';
+import {io} from '../socket.js';
 import {Link} from 'react-router-dom';
 import './Dashboard.css';
 
@@ -54,9 +54,10 @@ function ParentDashboard({user}) {
    <section className="panel" style={{padding:24}}>
     <span className="panel-kicker">ACCOUNT CONNECTION</span>
     <h3>No linked student found</h3>
-    <p>No verified student link is available. Contact Admin to verify your guardianship and student link. Phone matching alone does not verify guardianship.</p>
+    <p>No verified student link is available. Contact Admin to verify your link to your child. Phone matching alone does not verify guardianship.</p>
     <p>If the contact details were just updated, refresh this page after the account records are reconciled.</p>
     <button type="button" onClick={()=>setRevision(v=>v+1)}>Refresh student link</button>
+    <ParentCodeVerify onVerified={()=>setRevision(v=>v+1)}/>
    </section>
    :<>
     <section className="panel" style={{padding:24,marginBottom:20}}>
@@ -75,7 +76,7 @@ function ParentDashboard({user}) {
     </section>
     <button type="button" onClick={()=>setRevision(v=>v+1)} style={{marginTop:16}}>Refresh journey status</button>
    </>}
-  <p style={{fontSize:12,opacity:.7,marginTop:16}}>For a real college deployment, guardian identity and contact ownership must be verified before enabling private student tracking.</p>
+  <p style={{fontSize:12,opacity:.7,marginTop:16}}>For a real college deployment, parent identity and contact ownership must be verified before enabling private student tracking.</p>
  </div>;
 }
 
@@ -93,10 +94,43 @@ export function RouteOverview({route}) {
  </article>;
 }
 
+function ParentCodeVerify({onVerified}){
+ const [status,setStatus]=useState(null);
+ const [code,setCode]=useState('');
+ const [message,setMessage]=useState('');
+ const [busy,setBusy]=useState(false);
+ useEffect(()=>{api.get('/parent-links/status').then(r=>setStatus(r.data)).catch(()=>setStatus({}))},[]);
+ async function sendCode(){
+  setBusy(true);setMessage('');
+  try{const r=await api.post('/parent-links/request-code');setMessage(r.data.message)}
+  catch(e){setMessage(e.response?.data?.message||'Could not send the code.')}
+  finally{setBusy(false)}
+ }
+ async function confirm(e){
+  e.preventDefault();setBusy(true);setMessage('');
+  try{const r=await api.post('/parent-links/confirm-code',{code});setMessage(r.data.message);onVerified?.()}
+  catch(err){setMessage(err.response?.data?.message||'Could not verify the code.')}
+  finally{setBusy(false)}
+ }
+ if(!status?.hasStudentLink)return null;
+ return <section className="panel" style={{padding:24,marginTop:16}}>
+  <span className="panel-kicker">VERIFY YOUR LINK</span>
+  <h3>Verify with the code sent to your email</h3>
+  <p>We will email a 6-digit code to {status.emailMasked||'the email on your account'}. Enter it below. The code expires in 10 minutes.</p>
+  <button type="button" disabled={busy||!status.emailConfigured} onClick={sendCode}>{busy?'Please wait…':'Send code'}</button>
+  {!status.emailConfigured&&<p>Email is not set up on this server. Contact the transport office.</p>}
+  <form onSubmit={confirm} style={{marginTop:12,display:'flex',gap:8,flexWrap:'wrap'}}>
+   <input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="6-digit code" inputMode="numeric" aria-label="Verification code"/>
+   <button type="submit" disabled={busy||code.length!==6}>Verify</button>
+  </form>
+  {message&&<p role="status">{message}</p>}
+ </section>
+}
+
 export default function Dashboard(){
  const {user}=useAuth(),[summary,setSummary]=useState(null),[analytics,setAnalytics]=useState(null),[alerts,setAlerts]=useState([]),[routes,setRoutes]=useState([]),[error,setError]=useState('');
  async function load(){if(user?.role==='PARENT')return;try{setError('');const calls=[api.get('/dashboard/summary'),api.get('/routes')];if(user?.role==='ADMIN')calls.push(api.get('/dashboard/analytics'));const out=await Promise.all(calls);setSummary(out[0].data);setRoutes(out[1].data);if(out[2])setAnalytics(out[2].data);if(['ADMIN','DRIVER'].includes(user?.role)){const r=await api.get('/incidents');setAlerts(r.data)}}catch(e){setError(e.response?.data?.message||'Unable to load command center.')}}
- useEffect(()=>{if(user?.role==='PARENT')return;load();const socket=io(import.meta.env.VITE_SOCKET_URL||'http://localhost:4000');['sos:alert','accident:possible','accident:confirmed','fleet:breakdown','complaint:new'].forEach(ev=>socket.on(ev,load));const timer=setInterval(load,60000);return()=>{socket.disconnect();clearInterval(timer)}},[user?.role]);
+ useEffect(()=>{if(user?.role==='PARENT')return;load();const socket=io();['sos:alert','accident:possible','accident:confirmed','fleet:breakdown','complaint:new'].forEach(ev=>socket.on(ev,load));const timer=setInterval(load,60000);return()=>{socket.disconnect();clearInterval(timer)}},[user?.role]);
  const stats=useMemo(()=>analytics?[
   ['Active fleet',`${analytics.fleet.active}/${analytics.fleet.total}`,'▤',`${analytics.fleet.breakdown} breakdown`],
   ['Active routes',analytics.network.activeRoutes,'↝',`${analytics.network.fullyAssigned} fully assigned`],

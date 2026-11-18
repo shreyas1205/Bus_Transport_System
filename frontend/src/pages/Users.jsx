@@ -1,6 +1,7 @@
 import './Users.css';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import PendingStaffApprovals from '../components/PendingStaffApprovals';
 
 const initial = {
   name: '',
@@ -435,6 +436,18 @@ export default function Users() {
     }
   }
 
+  async function setParentLinkVerified(user, action) {
+    try {
+      setError('');
+      setNotice('');
+      const response = await api.post(`/parent-links/admin/${user.id}/${action}`);
+      setNotice(response.data.message);
+      await load();
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not update parent link verification');
+    }
+  }
+
   async function saveGuardianContact(user) {
     try {
       setSavingId(user.id);
@@ -446,7 +459,7 @@ export default function Users() {
       setNotice(response.data.message);
       await load();
     } catch (e) {
-      setError(e.response?.data?.message || 'Could not save guardian contact');
+      setError(e.response?.data?.message || 'Could not save parent contact');
     } finally {
       setSavingId('');
     }
@@ -722,7 +735,7 @@ export default function Users() {
                   `"${String(
                     value ??
                       ''
-                  ).replaceAll(
+                  ).replace(/^[=+\-@\t\r]/, "'$&").replaceAll(
                     '"',
                     '""'
                   )}"`
@@ -924,6 +937,7 @@ export default function Users() {
 
   return (
     <>
+      <PendingStaffApprovals />
       <div className="page-title">
         <div>
           <span className="eyebrow">
@@ -1369,8 +1383,8 @@ export default function Users() {
                       <label><span>Name</span><input value={item.name} onChange={e=>updateAiPerson(index,'name',e.target.value)} placeholder="Full name"/></label>
                       <label><span>Role</span><select value={item.role||''} onChange={e=>updateAiPerson(index,'role',e.target.value)}><option value="">Select role</option><option value="STUDENT">Student</option><option value="DRIVER">Driver</option><option value="PARENT">Parent</option></select></label>
                       <label><span>Institution ID <em>optional</em></span><input value={item.institutionId||''} onChange={e=>updateAiPerson(index,'institutionId',e.target.value)} placeholder="Auto-generate if blank"/></label>
-                      {item.role === 'STUDENT' && <label><span>Guardian phone</span><input value={item.guardianPhone||''} onChange={e=>updateAiPerson(index,'guardianPhone',e.target.value)} placeholder="Parent's phone" inputMode="tel" /></label>}
-                      {item.role === 'PARENT' && <label><span>Parent phone</span><input value={item.phone||''} onChange={e=>updateAiPerson(index,'phone',e.target.value)} placeholder="Guardian's phone" inputMode="tel" /></label>}
+                      {item.role === 'STUDENT' && <label><span>Parent phone</span><input value={item.guardianPhone||''} onChange={e=>updateAiPerson(index,'guardianPhone',e.target.value)} placeholder="Parent's phone" inputMode="tel" /></label>}
+                      {item.role === 'PARENT' && <label><span>Parent phone</span><input value={item.phone||''} onChange={e=>updateAiPerson(index,'phone',e.target.value)} placeholder="Parent's phone" inputMode="tel" /></label>}
                       <div className={`member-ready-state ${valid?'ready':'missing'}`}>{valid?'Ready':'Needs details'}</div>
                       <button type="button" className="member-remove" onClick={()=>removeAiPerson(index)}>×</button>
                     </div>
@@ -1504,7 +1518,7 @@ export default function Users() {
                         .value
                     )
                 }
-                minLength="6"
+                minLength="12"
                 required
               />
             </label>
@@ -1633,7 +1647,7 @@ export default function Users() {
                   />
                 </label>
                 <label>
-                  Guardian mobile (automatic Parent linking)
+                  Parent mobile (automatic Parent linking)
                   <input
                     value={form.guardianPhone}
                     onChange={e => change('guardianPhone', e.target.value)}
@@ -1670,7 +1684,7 @@ export default function Users() {
             {form.role === 'PARENT' && (
               <p className="full-row" style={{color:'#8fc9e5',fontSize:12}}>
                 Parent accounts link automatically when the registered phone matches
-                a Student's guardian mobile. No Student ID is needed.
+                a Student's parent mobile. No Student ID is needed.
               </p>
             )}
 
@@ -1760,7 +1774,7 @@ export default function Users() {
                         </button>
                       ) : ['STUDENT','PARENT'].includes(user.role) ? (
                         <div style={{display:'grid',gap:5,minWidth:180}}>
-                          <small style={{color:'#8aa5ba'}}>{user.role === 'STUDENT' ? 'Guardian mobile' : 'Parent mobile'}</small>
+                          <small style={{color:'#8aa5ba'}}>{user.role === 'STUDENT' ? 'Parent mobile' : 'Parent mobile'}</small>
                           <input style={{minWidth:150,width:'100%'}} inputMode="tel"
                             value={guardianContacts[user.id] ?? ''}
                             onChange={e => setGuardianContacts(prev => ({...prev,[user.id]:e.target.value}))}
@@ -1769,9 +1783,12 @@ export default function Users() {
                             onClick={() => saveGuardianContact(user)}>
                             {savingId === user.id ? 'Saving…' : 'Save contact / auto-link'}
                           </button>
-                          {user.role === 'PARENT' && <small style={{color:user.parentProfile?.studentId?'#67c7a5':'#e6af61'}}>
-                            {user.parentProfile?.studentId ? 'Linked to student' : 'Awaiting matching student'}
+                          {user.role === 'PARENT' && <small style={{color:user.parentProfile?.verifiedStudentId?'#67c7a5':'#e6af61'}}>
+                            {user.parentProfile?.verifiedStudentId ? 'Verified link' : user.parentProfile?.studentId ? 'Linked, not verified' : 'Awaiting matching student'}
                           </small>}
+                          {user.role === 'PARENT' && user.parentProfile?.studentId && <button type="button" className="secondary small" onClick={()=>setParentLinkVerified(user, user.parentProfile?.verifiedStudentId ? 'revoke' : 'verify')}>
+                            {user.parentProfile?.verifiedStudentId ? 'Revoke verification' : 'Verify parent link'}
+                          </button>}
                         </div>
                       ) : <span style={{color:'#58758d'}}>—</span>}
                     </td>

@@ -1,4 +1,6 @@
 const STORAGE_KEY = 'campusbus_offline_queue_v1';
+let flushChain = Promise.resolve();
+const activeFlushes = new Map();
 
 function readQueue() {
   try {
@@ -73,13 +75,25 @@ export function queueOfflineRequest({
   return item;
 }
 
-export async function flushOfflineQueue(api, ownerUserId = null) {
+export function flushOfflineQueue(api, ownerUserId = null) {
+  const ownerKey = ownerUserId || '*';
+  if (activeFlushes.has(ownerKey)) return activeFlushes.get(ownerKey);
+  const currentFlush = flushChain.then(() => flushQueue(api, ownerUserId));
+  flushChain = currentFlush.catch(() => {});
+  activeFlushes.set(ownerKey, currentFlush);
+  currentFlush.finally(() => {
+    if (activeFlushes.get(ownerKey) === currentFlush) activeFlushes.delete(ownerKey);
+  }).catch(() => {});
+  return currentFlush;
+}
+
+async function flushQueue(api, ownerUserId) {
   const queue = readQueue();
   if (!queue.length) {
     return { synced: 0, failed: 0, remaining: 0 };
   }
 
-  const remaining = [];
+  const removeIfUnchanged = new Map();
   let synced = 0;
   let failed = 0;
 
@@ -89,7 +103,6 @@ export async function flushOfflineQueue(api, ownerUserId = null) {
       ownerUserId &&
       item.ownerUserId !== ownerUserId
     ) {
-      remaining.push(item);
       continue;
     }
 
@@ -99,20 +112,20 @@ export async function flushOfflineQueue(api, ownerUserId = null) {
         url: item.url,
         data: item.data
       });
+      removeIfUnchanged.set(item.id, JSON.stringify(item));
       synced += 1;
     } catch (error) {
-      // No response normally means the network is still unavailable.
-      // Keep those requests for the next sync attempt. A 4xx/5xx response is
-      // considered a completed attempt so a permanently-invalid action does
-      // not retry forever.
-      if (!error.response) {
-        remaining.push(item);
-      } else {
-        failed += 1;
-      }
+      const status = error.response?.status;
+      const retryable = !Number.isInteger(status) || status === 408 || status === 429 || status >= 500 || status === 401;
+      if (!retryable) removeIfUnchanged.set(item.id, JSON.stringify(item));
+      failed += 1;
     }
   }
 
+  // Keep items added or replaced while a request was in flight. Only remove a
+  // completed snapshot when the stored item still has the exact sent version.
+  const latestQueue = readQueue();
+  const remaining = latestQueue.filter(item => removeIfUnchanged.get(item.id) !== JSON.stringify(item));
   writeQueue(remaining);
 
   return {

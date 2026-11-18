@@ -30,5 +30,5 @@
     .fs-actions{display:flex;gap:6px}.fs-empty{padding:35px;text-align:center;color:#6b899f}
     @media(max-width:1150px){.fs-summary{grid-template-columns:repeat(3,1fr)}.fs-stop-row,.fs-record{grid-template-columns:1fr 1fr}.fs-stop-row.header,.fs-record.header{display:none}.fs-actions{justify-content:flex-start}}
     @media(max-width:700px){.fs-summary{grid-template-columns:1fr 1fr}.fs-hero,.fs-panel-head{align-items:flex-start;flex-direction:column}.fs-hero-actions{justify-content:flex-start;width:100%}.fs-route-filter{width:100%}.fs-stop-row,.fs-record{grid-template-columns:1fr}.fs-searchbar{flex-direction:column}}
-
+  
 }

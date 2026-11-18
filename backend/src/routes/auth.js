@@ -99,6 +99,17 @@ router.post(
         });
       }
 
+      if (user.approvalStatus && user.approvalStatus !== 'APPROVED') {
+        return res.status(403).json({
+          message:
+            user.approvalStatus === 'REJECTED'
+              ? 'This sign-up was not approved. Contact the transport office.'
+              : user.approvalStatus === 'PENDING_OTP'
+                ? 'Verify your sign-up with the code sent to the student phone first.'
+                : 'Your account is waiting for admin approval.'
+        });
+      }
+
       if (
         !user.passwordHash.startsWith(
           'scrypt$'
@@ -231,6 +242,17 @@ router.patch(
         licenseExpiry,
         licensePhoto
       } = req.body;
+
+      if (req.user.role === 'PARENT' && phone !== undefined) {
+        const current = await prisma.user.findUnique({
+          where: { id: req.user.id },
+          select: { phone: true }
+        });
+        if (!current) return res.status(404).json({ message: 'User not found.' });
+        if (String(phone ?? '').trim() !== String(current.phone ?? '').trim()) {
+          return res.status(403).json({ message: 'Contact Admin to update a verified parent phone number.' });
+        }
+      }
 
 
       // ==========================

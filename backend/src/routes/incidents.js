@@ -1,5 +1,8 @@
 import express from 'express';
 import { prisma } from '../prisma.js';
+import { emitEmergencyUpdate } from '../security/socketAuth.js';
+import { verifiedParentStudent } from '../services/parentTransportAccess.js';
+import { sendLastKnownLocationAlert } from '../services/locationAlerts.js';
 import { auth, allow } from '../middleware.js';
 import {
   activateAutonomousEmergencyResponse,
@@ -8,6 +11,44 @@ import {
 } from '../services/emergencyResponse.js';
 
 const router = express.Router();
+
+// Driver emergency scope: the bus is derived from the driver's active route
+// assignment (temporary-driver sync writes route.assignedDriverId), never
+// trusted from the request body.
+async function assignedBusIdsForDriver(driverId) {
+  const routes = await prisma.route.findMany({
+    where: { assignedDriverId: driverId, isActive: true },
+    select: { assignedBusId: true }
+  });
+  return [...new Set(routes.map(r => r.assignedBusId).filter(Boolean))];
+}
+
+async function resolveDriverVehicle(driverId, requestedVehicleId) {
+  const busIds = await assignedBusIdsForDriver(driverId);
+  if (requestedVehicleId) {
+    return busIds.includes(requestedVehicleId)
+      ? { vehicleId: requestedVehicleId }
+      : { error: 'You can only raise emergencies for a bus assigned to you.' };
+  }
+  return { vehicleId: busIds.length === 1 ? busIds[0] : null };
+}
+
+const SENSOR_BOUNDS = {
+  latitude: [-90, 90], longitude: [-180, 180],
+  speedBefore: [0, 250], speedAfter: [0, 250],
+  impactGForce: [0, 100], tiltDegrees: [0, 180]
+};
+
+function invalidSensorField(body = {}) {
+  for (const [key, [min, max]] of Object.entries(SENSOR_BOUNDS)) {
+    const raw = body[key];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < min || n > max) return key;
+  }
+  return null;
+}
+
 
 const VERIFICATION_WINDOW_MS = 30 * 1000;
 const ACCIDENT_THRESHOLD = 0.55;
@@ -280,7 +321,7 @@ async function notifyParentsForConfirmedAccident(incident) {
       }
     });
 
-    const relevantParents = parents.filter((parent) => {
+    const linkedParents = parents.filter((parent) => {
       const linkedStudent = parent.parentProfile?.studentId;
 
       return (
@@ -288,6 +329,9 @@ async function notifyParentsForConfirmedAccident(incident) {
         affectedStudentIds.has(linkedStudent)
       );
     });
+    const relevantParents = (await Promise.all(linkedParents.map(async parent =>
+      await verifiedParentStudent(parent.id) ? parent : null
+    ))).filter(Boolean);
 
     if (!relevantParents.length) {
       return {
@@ -384,13 +428,20 @@ router.post(
   allow('DRIVER'),
   async (req, res) => {
     try {
+      const badField = invalidSensorField(req.body);
+      if (badField) {
+        return res.status(400).json({ message: `Invalid ${badField}` });
+      }
+      const scope = await resolveDriverVehicle(req.user.id, req.body.vehicleId);
+      if (scope.error) {
+        return res.status(403).json({ message: scope.error });
+      }
+
       const incident = await prisma.incident.create({
         data: {
           driverId: req.user.id,
 
-          vehicleId:
-            req.body.vehicleId ||
-            null,
+          vehicleId: scope.vehicleId,
 
           type:
             req.body.type ||
@@ -410,10 +461,7 @@ router.post(
         }
       });
 
-      req.app.get('io')?.emit(
-        'sos:alert',
-        incident
-      );
+      emitEmergencyUpdate(req.app.get('io'), 'sos:alert', incident);
 
       await notifyAdmins({
         title: 'Driver SOS Alert',
@@ -452,7 +500,6 @@ router.post(
   async (req, res) => {
     try {
       const {
-        vehicleId,
         speedBefore,
         speedAfter,
         impactGForce,
@@ -461,11 +508,21 @@ router.post(
         longitude
       } = req.body;
 
-      if (!vehicleId) {
+      const badField = invalidSensorField(req.body);
+      if (badField) {
+        return res.status(400).json({ message: `Invalid ${badField}` });
+      }
+
+      const scope = await resolveDriverVehicle(req.user.id, req.body.vehicleId);
+      if (scope.error) {
+        return res.status(403).json({ message: scope.error });
+      }
+      if (!scope.vehicleId) {
         return res.status(400).json({
           message: 'vehicleId is required'
         });
       }
+      const vehicleId = scope.vehicleId;
 
       const vehicle = await prisma.vehicle.findUnique({
         where: {
@@ -623,10 +680,7 @@ router.post(
           );
         });
       } else {
-        req.app.get('io')?.emit(
-          'accident:possible',
-          incident
-        );
+        emitEmergencyUpdate(req.app.get('io'), 'accident:possible', incident);
 
         await notifyAdmins({
           title:
@@ -851,10 +905,7 @@ router.patch(
             }
           });
 
-        req.app.get('io')?.emit(
-          'accident:false-alarm',
-          incident
-        );
+        emitEmergencyUpdate(req.app.get('io'), 'accident:false-alarm', incident);
 
         /*
           IMPORTANT:
@@ -1059,10 +1110,7 @@ router.patch(
             }
           });
 
-        req.app.get('io')?.emit(
-          'accident:false-alarm',
-          incident
-        );
+        emitEmergencyUpdate(req.app.get('io'), 'accident:false-alarm', incident);
 
         return res.json({
           message:
@@ -1112,6 +1160,14 @@ router.patch(
           force: true,
           activationReason: 'ADMIN_CONFIRMED_ACCIDENT'
         });
+
+      // Last-known-location SMS + email to admins and parents (non-blocking).
+      if (incident.vehicleId) {
+        void sendLastKnownLocationAlert({
+          reason: 'ACCIDENT_CONFIRMED',
+          vehicleId: incident.vehicleId
+        });
+      }
 
       return res.json({
         message:
@@ -1279,10 +1335,7 @@ router.patch(
           data
         });
 
-      req.app.get('io')?.emit(
-        'incident:update',
-        incident
-      );
+      emitEmergencyUpdate(req.app.get('io'), 'incident:update', incident);
 
       res.json(incident);
     } catch (error) {

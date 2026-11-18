@@ -1740,7 +1740,7 @@ html,body,#root{margin:0;min-height:100%;background:#061321}body{min-width:320px
 .driver-document-grid{display:grid;grid-template-columns:1fr 260px;gap:16px;padding:18px}
 .document-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .document-facts>div{padding:13px;border:1px solid rgba(103,166,218,.1);border-radius:10px;background:#061725}
-.document-facts small{display:block;color:#587991;font-size:11px;font-weight:900}.document-facts b{display:block;margin-top:6px;color:#dcecf7;font-size:11px}
+.document-facts small{display:block;color:#9fc2dc;font-size:12px;font-weight:900;letter-spacing:.04em}.document-facts b{display:block;margin-top:6px;color:#dcecf7;font-size:11px}
 .license-preview{overflow:hidden;min-height:150px;border:1px solid rgba(103,166,218,.12);border-radius:11px;background:#061725}.license-preview img{display:block;width:100%;height:100%;object-fit:contain}
 @media(max-width:1000px){.profile-hero{grid-template-columns:1fr}.profile-account-summary{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.premium-profile-form,.profile-account-summary,.document-facts{grid-template-columns:1fr}.driver-document-grid{grid-template-columns:1fr}.profile-identity{align-items:flex-start}.profile-hero{padding:16px}}
@@ -3187,3 +3187,33 @@ textarea:focus-visible {
 @media(max-width:650px){.nvg-route-caution-actions {width:100%;}}
 
 }
+
+/* UI spacing pass: dashboard stat cards and text */
+.stat-grid{gap:18px}
+.stat-card{padding:22px}
+.stat-card strong{letter-spacing:.02em;line-height:1.25}
+.stat-card small{letter-spacing:.04em;margin-top:6px}
+.stat-card p{letter-spacing:.02em;line-height:1.6;margin-top:8px}
+.dashboard-grid{gap:20px}
+.panel{letter-spacing:.01em}
+.dashboard-hero{margin-bottom:20px}
+
+/* Sign-up page sits outside .page-content, so give its form the app's field styling */
+.signup-page{max-width:480px;margin:48px auto;padding:0 16px}
+.signup-page .panel{padding:28px}
+.signup-page h2{margin:6px 0 20px}
+.signup-page .button-row{display:flex;gap:8px}
+.signup-page .button-row button{flex:1;min-height:40px}
+.signup-page form label{display:grid;gap:7px;color:#7895ad;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.signup-page input{width:100%;box-sizing:border-box;min-height:44px;padding:0 13px;font:inherit;font-size:14px;font-weight:500;letter-spacing:normal;text-transform:none;border:1px solid rgba(111,169,218,.18);border-radius:10px;background:#061725;color:#e8f4fd;outline:none}
+.signup-page input:focus{border-color:rgba(47,172,255,.58);box-shadow:0 0 0 3px rgba(37,140,255,.08)}
+.signup-page small,.signup-page form p{margin:0;color:#7893aa;font-size:12px;line-height:1.5}
+.signup-page form button{min-height:44px;margin-top:4px}
+.signup-page [role=status],.signup-page [role=alert]{margin:16px 0 0;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.45}
+.signup-page [role=status]{border:1px solid rgba(53,221,160,.2);background:rgba(53,221,160,.06);color:#9ff0d0}
+.signup-page [role=alert]{border:1px solid rgba(255,93,112,.25);background:rgba(255,93,112,.08);color:#ffb0b9}
+@media(max-width:600px){.signup-page{margin:24px auto}.signup-page .panel{padding:20px}}
+
+/* Dashboard banners: keep clear of the hero above and the panel below */
+.dashboard-page > .error{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:18px 0;padding:14px 18px}
+.dashboard-page > .error button{margin-left:auto}

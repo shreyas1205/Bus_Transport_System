@@ -27,7 +27,13 @@ export function clearAuthSession() {
 export function saveAuthSession({ token, user, remember }) {
   if (!token || !user) throw new Error('Missing login credentials returned by server');
   clearAuthSession();
-  const storage = remember === true ? localStorage : sessionStorage;
-  storage.setItem(TOKEN_KEY, token);
-  storage.setItem(USER_KEY, JSON.stringify(user));
+  // Always keep this login in this tab's sessionStorage so a refresh keeps the
+  // same account in this tab, even if another tab logs in with a different one.
+  sessionStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  // "Remember me" additionally persists the login across browser restarts.
+  if (remember === true) {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  }
 }
